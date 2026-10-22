@@ -29,14 +29,17 @@ jobs:
             rid: linux-x64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
-      # Not --locked-mode: the lock files do not yet cover runtime-specific packs. Day 10 decides
-      # whether to declare RuntimeIdentifiers so publishes can restore in locked mode too.
+      # Not --locked-mode: the lock files do not yet cover runtime-specific packs. RID restores
+      # write their lock file under obj/ (Directory.Build.props). Day 10 decides whether to
+      # declare RuntimeIdentifiers so publishes can restore in locked mode too.
       - name: Publish worker
         run: dotnet publish src/PdfSuite.Pdf.Worker -c Release -r ${{ matrix.rid }} --self-contained -o publish/${{ matrix.rid }}
 
@@ -49,7 +52,7 @@ jobs:
           $bytes = (Get-ChildItem publish/${{ matrix.rid }} -Recurse -File | Measure-Object Length -Sum).Sum
           "{0}: {1:N1} MB in {2} files" -f "${{ matrix.rid }}", ($bytes / 1MB), (Get-ChildItem publish/${{ matrix.rid }} -Recurse -File).Count
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pdf-suite-${{ matrix.rid }}
           path: publish/${{ matrix.rid }}

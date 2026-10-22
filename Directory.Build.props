@@ -8,6 +8,13 @@
     <Deterministic>true</Deterministic>
     <!-- Lock files make restores reproducible; CI restores with locked mode. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!--
+      A restore with a runtime identifier (dotnet publish -r ...) would otherwise add a
+      RID section to the committed lock files, and CI's RID-less locked restore then fails
+      with NU1004. Those restores write their lock file under obj/ instead. Spike S6 decides
+      whether to declare RuntimeIdentifiers and lock every RID.
+    -->
+    <NuGetLockFilePath Condition="'$(RuntimeIdentifier)' != ''">$(MSBuildProjectDirectory)/obj/packages.$(RuntimeIdentifier).lock.json</NuGetLockFilePath>
     <NuGetAudit>true</NuGetAudit>
     <NuGetAuditMode>all</NuGetAuditMode>
   </PropertyGroup>

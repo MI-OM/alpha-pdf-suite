@@ -61,6 +61,11 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
 3. **Telemetry in dependencies.** Avalonia.BuildServices sends build telemetry, and the test platform sends test telemetry. Both are now disabled at repository level and verified (`docs/licensing/dependency-inventory.md` §3). Earlier local builds probably sent Avalonia's anonymous build data.
 4. **The PDFium NuGet packages ship no licence or notice files.** Notices must come from the matching release archive. This is a release blocker, tracked in the inventory.
 5. **xunit.v3 4.x needs the Microsoft.Testing.Platform runner** (`global.json` → `test.runner`). The VSTest adapters are no longer needed.
+6. **A local `dotnet publish -r` rewrites the committed lock files.**
+   - It adds a RID section to the lock files, and CI's RID-less locked restore then fails with `NU1004`. That is what happened on the first CI run (2026-10-22, `d01bf8d`), on all three OSes: a `win-x64` publish made for the S6 check was committed.
+   - Fixed by regenerating the lock files.
+   - `Directory.Build.props` now sends RID restores to `obj/packages.<rid>.lock.json`. Verified by repeating the publish: the committed lock files were unchanged.
+7. **The v4 GitHub Actions run on the deprecated Node 20.** They were moved to checkout v7, setup-dotnet v6, upload-artifact v7, and download-artifact v8 (all Node 24), with `persist-credentials: false`.
 
 ### Not yet covered by S0
 - **Password-protected, metadata, JavaScript, bookmark, hidden-layer, and vector-art canary fixtures.** They need qpdf or raw object writing, and arrive with S4 and S5.

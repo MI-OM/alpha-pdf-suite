@@ -26,9 +26,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       # TODO(supply chain): pin actions to commit SHAs before the first release.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
@@ -56,7 +58,7 @@ jobs:
           [IO.File]::WriteAllText("fixture-hashes.txt", ($lines -join "`n") + "`n")
           Get-Content fixture-hashes.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: fixture-hashes-${{ runner.os }}
           path: fixture-hashes.txt
@@ -69,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: fixture-hashes-*
           path: hashes
