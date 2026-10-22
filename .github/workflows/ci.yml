@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # No telemetry from builds or test runs (docs/licensing/dependency-inventory.md §3).
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  TESTINGPLATFORM_TELEMETRY_OPTOUT: "1"
+  AVALONIA_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+
+jobs:
+  build-test:
+    name: Build and test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # TODO(supply chain): pin actions to commit SHAs before the first release.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore (locked)
+        run: dotnet restore PdfSuite.slnx --locked-mode
+
+      - name: Build
+        run: dotnet build PdfSuite.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test --solution PdfSuite.slnx -c Release --no-build
+
+      - name: Generate fixtures
+        run: dotnet run --project tools/PdfSuite.FixtureGenerator -c Release --no-build
+
+      - name: Worker self-test in a separate process
+        run: dotnet run --project src/PdfSuite.Pdf.Worker -c Release --no-build -- --self-test fixtures/generated/large-2000-pages.pdf
+
+      - name: Record fixture hashes
+        shell: pwsh
+        run: |
+          $lines = Get-ChildItem fixtures/generated | Sort-Object Name | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+          }
+          [IO.File]::WriteAllText("fixture-hashes.txt", ($lines -join "`n") + "`n")
+          Get-Content fixture-hashes.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fixture-hashes-${{ runner.os }}
+          path: fixture-hashes.txt
+
+  # Spike S0 finding check: is PDFium's output identical on every OS? A difference is a
+  # finding to record in docs/research/spike-results.md, not a build failure.
+  fixtures-identical-across-os:
+    name: Fixtures identical across OSes (informational)
+    needs: build-test
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fixture-hashes-*
+          path: hashes
+
+      - name: Compare
+        run: |
+          diff hashes/fixture-hashes-Linux/fixture-hashes.txt hashes/fixture-hashes-Windows/fixture-hashes.txt
+          diff hashes/fixture-hashes-Linux/fixture-hashes.txt hashes/fixture-hashes-macOS/fixture-hashes.txt

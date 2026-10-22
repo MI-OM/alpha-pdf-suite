@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\PdfSuite.Pdf.Pdfium\PdfSuite.Pdf.Pdfium.csproj" />
+  </ItemGroup>
+
+</Project>

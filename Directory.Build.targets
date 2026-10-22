@@ -1,0 +1,10 @@
+<Project>
+  <!--
+    No telemetry from builds (PRD §9, playbook rule 11).
+    Avalonia.BuildServices, a transitive dependency of Avalonia, sends anonymous build data to
+    av-build-tel-api-v1.avaloniaui.net on every build unless AVALONIA_TELEMETRY_OPTOUT=1 is set.
+    This empty target replaces it, so no contributor's build contacts that service. Targets here
+    are imported after package targets, so this definition wins.
+  -->
+  <Target Name="AvaloniaStats" />
+</Project>

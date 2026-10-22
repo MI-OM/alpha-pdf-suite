@@ -1,0 +1,20 @@
+# Build output
+bin/
+obj/
+artifacts/
+
+# Generated test fixtures (reproduce with tools/PdfSuite.FixtureGenerator)
+fixtures/generated/
+
+# IDE and OS files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
+
+# Test results
+TestResults/
+*.trx

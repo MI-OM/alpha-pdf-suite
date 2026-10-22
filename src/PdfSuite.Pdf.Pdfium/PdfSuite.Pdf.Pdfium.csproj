@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PdfSuite.Pdf.Abstractions\PdfSuite.Pdf.Abstractions.csproj" />
+  </ItemGroup>
+
+  <!-- Prebuilt non-V8 PDFium binaries. Each package carries runtimes/<rid>/native for its OS. -->
+  <ItemGroup>
+    <PackageReference Include="bblanchon.PDFium.Win32" />
+    <PackageReference Include="bblanchon.PDFium.Linux" />
+    <PackageReference Include="bblanchon.PDFium.macOS" />
+  </ItemGroup>
+
+</Project>
