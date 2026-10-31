@@ -19,6 +19,7 @@ foreach (Fixture fixture in Fixtures.All)
 var options = new JsonSerializerOptions
 {
     WriteIndented = true,
+    NewLine = "\n", // The default is the OS line ending, which made the manifest differ on Windows.
     PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
 };

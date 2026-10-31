@@ -4,8 +4,8 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
 
 | Item | Status | Outcome |
 |---|---|---|
-| S0 Skeleton, CI, fixtures | Done | **Pass.** CI is green on Windows, macOS (arm64), and Linux at `2d40760` (run 39703814388). Fixtures differ between OSes: see finding 8 |
-| S1 Tiled rendering | Windows done; Linux and macOS not measured | **Pass on Windows** against every target. Pipeline tests run on all three OSes in CI. Interactive measurements on Linux and macOS, and worker memory limits there, are still open |
+| S0 Skeleton, CI, fixtures | Done | **Pass.** CI is green on Windows, macOS (arm64), and Linux (first at `2d40760`, again at `7da2c2a`). Fixtures are byte-identical across OSes except where PDFium renders text: see findings 8 and 15 |
+| S1 Tiled rendering | Windows done; Linux and macOS not measured | **Pass on Windows** against every target. The pipeline tests pass on all three OSes in CI (`7da2c2a`). Interactive measurements on Linux and macOS, and worker memory limits there, are still open |
 | S2 Document-text accessibility | Not started | — |
 | S3 Printing | Not started | — |
 | S4 qpdf from .NET | Not started | — |
@@ -70,7 +70,7 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
    - At `2d40760`, every OS passed every step: locked restore, build, 15 tests, fixture generation, and the worker self-test. Job times: Windows 85 s, macOS arm64 52 s, Linux 34 s.
    - The informational comparison of fixture hashes failed, so at least one fixture differs between Linux and Windows or macOS.
    - The job log and hash artifacts need a GitHub sign-in to read. CI now also publishes each OS's hashes as public annotations, so the next run shows which fixtures differ.
-   - **Consequence until explained:** fixture tests compare content (text, objects, pages), never raw bytes across OSes.
+   - **Explained in finding 15:** only the fixture rendered with PDFium differs, plus the manifest's line endings.
 
 ### Not yet covered by S0
 - **Password-protected, metadata, JavaScript, bookmark, hidden-layer, and vector-art canary fixtures.** They need qpdf or raw object writing, and arrive with S4 and S5.
@@ -141,6 +141,15 @@ Machine: i5-1235U, 12 logical cores, Windows 11 x64, scaling 1.0, 1000 × 701 DI
     - That SDK implicitly references `Microsoft.NET.ILLink.Tasks` 10.0.14, while the lock files recorded 10.0.13. The locked restore then failed on all three OSes (run 41165944204, `59ef911`).
     - **Fix:** the SDK is pinned exactly (`rollForward: disable`). Moving to a new SDK is now a deliberate commit that updates `global.json` and the lock files together (README).
     - **Consequence:** .NET security patches arrive only when someone bumps the pin. That needs a routine, monthly after Patch Tuesday, because self-contained builds ship the pinned runtime.
+15. **PDFium's writing is identical across operating systems; its rendering is not.**
+    - CI at `7da2c2a` (run 41166246083) was green on all three OSes, with all 25 tests passing, including the 10 worker-pipeline tests on macOS and Linux.
+    - The published hashes showed that 7 of the 8 fixture PDFs are byte-identical on Windows, macOS, and Linux.
+    - The exception was `canary-image.pdf`, the only fixture made by *rendering* text into pixels. Its hash differed on all three OSes.
+    - The cause is not yet investigated. The likely explanation is that non-embedded standard fonts (Helvetica) are substituted or rasterised differently on each OS.
+    - `manifest.json` differed on Windows only, because of .NET's OS-dependent JSON line ending.
+    - **Fixes:** the canary label is now drawn with a built-in 5×7 pixel font instead of PDFium rendering, and the manifest is written with `\n`. All fixtures should then match across OSes; the next CI run confirms it.
+    - **Consequence for testing:** tests that compare rendered pixels need a baseline per OS (or tolerances). Tests that compare written PDFs can compare bytes across OSes.
+    - **Consequence for the product:** the same document can look slightly different on each OS when its fonts are not embedded. This is normal for PDF viewers, but it should be documented, and it matters for the visual-regression corpus.
 
 ### Still open for S1
 - **Linux (X11 and XWayland) and macOS:** the interactive benchmark and a visual check. CI runs the pipeline tests on all three OSes.

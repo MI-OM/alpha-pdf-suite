@@ -62,7 +62,7 @@ public static class Fixtures
             "canary-text.pdf", "Canary in a text object.",
             "CANARY-01", "text", 0, CanaryLineRect), CanaryText),
         new(new(
-            "canary-image.pdf", "Canary drawn as pixels inside an image; it is not extractable text.",
+            "canary-image.pdf", "Canary drawn as pixels (a built-in 5x7 pixel font) inside an image; it is not extractable text.",
             "CANARY-02", "image", 0, [70, 398, 274, 442]), CanaryImage),
         new(new(
             "canary-shared-xobject.pdf", "Canary in a form XObject shared by pages 1 and 2. Only page 1 is redacted.",
@@ -138,13 +138,7 @@ public static class Fixtures
 
     public static byte[] CanaryImage()
     {
-        using var label = PdfiumDocumentWriter.CreateNew();
-        using (var labelPage = label.AddPage(200, 40))
-        {
-            labelPage.AddText("CANARY-02", 10, 12, 24);
-        }
-
-        BgraImage pixels = label.RenderPage(0, 800, 160);
+        BgraImage pixels = PixelText("CANARY-02", width: 800, height: 160, scale: 12);
 
         using var document = PdfiumDocumentWriter.CreateNew();
         using (var page = AddCanaryPage(document, "Canary fixture: image"))
@@ -259,6 +253,58 @@ public static class Fixtures
         }
 
         return builder.ToString();
+    }
+
+    // A 5x7 pixel font for the canary label. Rendering the label with PDFium would make the
+    // fixture differ between operating systems, because PDFium's text rendering does (spike finding 15).
+    private static readonly Dictionary<char, string[]> PixelFont = new()
+    {
+        ['C'] = [" ### ", "#   #", "#    ", "#    ", "#    ", "#   #", " ### "],
+        ['A'] = [" ### ", "#   #", "#   #", "#####", "#   #", "#   #", "#   #"],
+        ['N'] = ["#   #", "##  #", "# # #", "#  ##", "#   #", "#   #", "#   #"],
+        ['R'] = ["#### ", "#   #", "#   #", "#### ", "# #  ", "#  # ", "#   #"],
+        ['Y'] = ["#   #", "#   #", " # # ", "  #  ", "  #  ", "  #  ", "  #  "],
+        ['-'] = ["     ", "     ", "     ", "#####", "     ", "     ", "     "],
+        ['0'] = [" ### ", "#   #", "#  ##", "# # #", "##  #", "#   #", " ### "],
+        ['2'] = [" ### ", "#   #", "    #", "   # ", "  #  ", " #   ", "#####"],
+    };
+
+    /// <summary>Black pixel-font text centred on white, each font pixel drawn as a scale × scale block.</summary>
+    private static BgraImage PixelText(string text, int width, int height, int scale)
+    {
+        var pixels = new byte[width * height * 4];
+        pixels.AsSpan().Fill(255);
+        int left = (width - (((text.Length * 6) - 1) * scale)) / 2;
+        int top = (height - (7 * scale)) / 2;
+        for (int i = 0; i < text.Length; i++)
+        {
+            string[] glyph = PixelFont[text[i]];
+            for (int row = 0; row < 7; row++)
+            {
+                for (int column = 0; column < 5; column++)
+                {
+                    if (glyph[row][column] != '#')
+                    {
+                        continue;
+                    }
+
+                    for (int dy = 0; dy < scale; dy++)
+                    {
+                        int y = top + (row * scale) + dy;
+                        int x = left + ((((i * 6) + column) * scale));
+                        pixels.AsSpan(((y * width) + x) * 4, scale * 4).Clear();
+                    }
+                }
+            }
+        }
+
+        // Clearing set alpha to 0 too; the image is opaque.
+        for (int alpha = 3; alpha < pixels.Length; alpha += 4)
+        {
+            pixels[alpha] = 255;
+        }
+
+        return new BgraImage(width, height, pixels);
     }
 
     private static BgraImage Gradient(int width, int height)
