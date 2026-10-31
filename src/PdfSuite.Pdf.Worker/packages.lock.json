@@ -20,6 +20,12 @@
           "bblanchon.PDFium.macOS": "[158.0.8111, )"
         }
       },
+      "pdfsuite.pdf.remote": {
+        "type": "Project",
+        "dependencies": {
+          "PdfSuite.Pdf.Abstractions": "[1.0.0, )"
+        }
+      },
       "bblanchon.PDFium.Linux": {
         "type": "CentralTransitive",
         "requested": "[158.0.8111, )",

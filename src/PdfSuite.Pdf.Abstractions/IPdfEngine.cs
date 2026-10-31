@@ -20,7 +20,26 @@ public interface IPdfDocument : IDisposable
 
     /// <summary>Returns the page's text as the engine extracts it, in content order.</summary>
     string GetPageText(int pageIndex);
+
+    /// <summary>
+    /// Renders one region of a page, with annotations, as opaque 32-bit BGRA pixels
+    /// (stride = width * 4). The page is scaled to <see cref="PageSize.ToPixels"/> at
+    /// <paramref name="pixelsPerPoint"/>; the region is measured in those pixels from
+    /// the scaled page's top-left corner.
+    /// </summary>
+    void RenderRegion(int pageIndex, double pixelsPerPoint, PixelRegion region, Span<byte> bgra);
 }
 
 /// <summary>Page width and height in PDF points (1/72 inch), as reported by the engine.</summary>
-public readonly record struct PageSize(double Width, double Height);
+public readonly record struct PageSize(double Width, double Height)
+{
+    /// <summary>
+    /// The page's size in whole pixels at a scale. Renderers and viewers both use this, so
+    /// a tile grid always matches what the engine draws.
+    /// </summary>
+    public (int Width, int Height) ToPixels(double pixelsPerPoint) =>
+        ((int)Math.Ceiling(Width * pixelsPerPoint), (int)Math.Ceiling(Height * pixelsPerPoint));
+}
+
+/// <summary>A rectangle in pixels of a scaled page, origin at its top-left corner.</summary>
+public readonly record struct PixelRegion(int Left, int Top, int Width, int Height);

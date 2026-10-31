@@ -59,6 +59,12 @@ internal static unsafe partial class PdfiumNative
     [LibraryImport(Library)]
     internal static partial nint FPDFBitmap_Create(int width, int height, int alpha);
 
+    internal const int FPDFBitmap_BGRA = 4;
+
+    // Wraps a caller-owned buffer; FPDFBitmap_Destroy does not free it.
+    [LibraryImport(Library)]
+    internal static partial nint FPDFBitmap_CreateEx(int width, int height, int format, void* firstScan, int stride);
+
     // Returns FPDF_BOOL in newer headers and void in older ones; the result is not needed.
     [LibraryImport(Library)]
     internal static partial void FPDFBitmap_FillRect(nint bitmap, int left, int top, int width, int height, CULong color);

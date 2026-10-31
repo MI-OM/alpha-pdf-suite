@@ -16,6 +16,11 @@ public enum PdfiumObjectKind
 
 public sealed unsafe class PdfiumDocument : IPdfDocument
 {
+    // Loading a page parses its content, so recently used pages stay loaded. Tiles of the
+    // same page arrive in bursts; a handful of pages covers a screenful at any zoom.
+    private const int LoadedPageCapacity = 8;
+
+    private readonly List<(int Index, nint Page)> _loadedPages = new(LoadedPageCapacity);
     private nint _document;
     private void* _buffer;
 
@@ -57,15 +62,14 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
         lock (PdfiumLibrary.Sync)
         {
             ThrowIfInvalidPage(pageIndex);
-            nint page = LoadPage(pageIndex);
-            nint textPage = PdfiumNative.FPDFText_LoadPage(page);
+            nint textPage = PdfiumNative.FPDFText_LoadPage(GetLoadedPage(pageIndex));
+            if (textPage == 0)
+            {
+                throw new InvalidOperationException($"PDFium could not extract text from page {pageIndex}.");
+            }
+
             try
             {
-                if (textPage == 0)
-                {
-                    throw new InvalidOperationException($"PDFium could not extract text from page {pageIndex}.");
-                }
-
                 int count = PdfiumNative.FPDFText_CountChars(textPage);
                 if (count <= 0)
                 {
@@ -82,12 +86,44 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
             }
             finally
             {
-                if (textPage != 0)
+                PdfiumNative.FPDFText_ClosePage(textPage);
+            }
+        }
+    }
+
+    public void RenderRegion(int pageIndex, double pixelsPerPoint, PixelRegion region, Span<byte> bgra)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pixelsPerPoint);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(region.Width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(region.Height);
+        int stride = region.Width * 4;
+        ArgumentOutOfRangeException.ThrowIfLessThan(bgra.Length, stride * region.Height, nameof(bgra));
+
+        lock (PdfiumLibrary.Sync)
+        {
+            var (pageWidth, pageHeight) = GetPageSize(pageIndex).ToPixels(pixelsPerPoint);
+            nint page = GetLoadedPage(pageIndex);
+            fixed (byte* pixels = bgra)
+            {
+                nint bitmap = PdfiumNative.FPDFBitmap_CreateEx(
+                    region.Width, region.Height, PdfiumNative.FPDFBitmap_BGRA, pixels, stride);
+                if (bitmap == 0)
                 {
-                    PdfiumNative.FPDFText_ClosePage(textPage);
+                    throw new InvalidOperationException("PDFium could not wrap the render buffer.");
                 }
 
-                PdfiumNative.FPDF_ClosePage(page);
+                try
+                {
+                    // Rendering the whole scaled page offset by the region's origin makes
+                    // PDFium draw only the part that falls inside the bitmap.
+                    PdfiumNative.FPDFBitmap_FillRect(bitmap, 0, 0, region.Width, region.Height, new CULong(0xFFFFFFFF));
+                    PdfiumNative.FPDF_RenderPageBitmap(
+                        bitmap, page, -region.Left, -region.Top, pageWidth, pageHeight, 0, PdfiumNative.FPDF_ANNOT);
+                }
+                finally
+                {
+                    PdfiumNative.FPDFBitmap_Destroy(bitmap);
+                }
             }
         }
     }
@@ -98,25 +134,18 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
         lock (PdfiumLibrary.Sync)
         {
             ThrowIfInvalidPage(pageIndex);
-            nint page = LoadPage(pageIndex);
-            try
+            nint page = GetLoadedPage(pageIndex);
+            int matches = 0;
+            int total = PdfiumNative.FPDFPage_CountObjects(page);
+            for (int i = 0; i < total; i++)
             {
-                int matches = 0;
-                int total = PdfiumNative.FPDFPage_CountObjects(page);
-                for (int i = 0; i < total; i++)
+                if (PdfiumNative.FPDFPageObj_GetType(PdfiumNative.FPDFPage_GetObject(page, i)) == (int)kind)
                 {
-                    if (PdfiumNative.FPDFPageObj_GetType(PdfiumNative.FPDFPage_GetObject(page, i)) == (int)kind)
-                    {
-                        matches++;
-                    }
+                    matches++;
                 }
+            }
 
-                return matches;
-            }
-            finally
-            {
-                PdfiumNative.FPDF_ClosePage(page);
-            }
+            return matches;
         }
     }
 
@@ -125,15 +154,7 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
         lock (PdfiumLibrary.Sync)
         {
             ThrowIfInvalidPage(pageIndex);
-            nint page = LoadPage(pageIndex);
-            try
-            {
-                return PdfiumNative.FPDFPage_GetAnnotCount(page);
-            }
-            finally
-            {
-                PdfiumNative.FPDF_ClosePage(page);
-            }
+            return PdfiumNative.FPDFPage_GetAnnotCount(GetLoadedPage(pageIndex));
         }
     }
 
@@ -153,6 +174,13 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
     {
         lock (PdfiumLibrary.Sync)
         {
+            foreach (var (_, page) in _loadedPages)
+            {
+                PdfiumNative.FPDF_ClosePage(page);
+            }
+
+            _loadedPages.Clear();
+
             if (_document != 0)
             {
                 PdfiumNative.FPDF_CloseDocument(_document);
@@ -167,14 +195,32 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
         }
     }
 
-    private nint LoadPage(int pageIndex)
+    /// <summary>Returns a loaded page, most recently used last. Caller holds Sync.</summary>
+    private nint GetLoadedPage(int pageIndex)
     {
+        ThrowIfInvalidPage(pageIndex);
+        int found = _loadedPages.FindIndex(p => p.Index == pageIndex);
+        if (found >= 0)
+        {
+            var entry = _loadedPages[found];
+            _loadedPages.RemoveAt(found);
+            _loadedPages.Add(entry);
+            return entry.Page;
+        }
+
         nint page = PdfiumNative.FPDF_LoadPage(_document, pageIndex);
         if (page == 0)
         {
             throw new InvalidOperationException($"PDFium could not load page {pageIndex}.");
         }
 
+        if (_loadedPages.Count == LoadedPageCapacity)
+        {
+            PdfiumNative.FPDF_ClosePage(_loadedPages[0].Page);
+            _loadedPages.RemoveAt(0);
+        }
+
+        _loadedPages.Add((pageIndex, page));
         return page;
     }
 

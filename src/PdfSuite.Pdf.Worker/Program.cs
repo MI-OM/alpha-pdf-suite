@@ -1,38 +1,55 @@
 using System.Globalization;
 using PdfSuite.Pdf.Abstractions;
 using PdfSuite.Pdf.Pdfium;
+using PdfSuite.Pdf.Worker;
 
-// Spike item S0: proves that PDFium loads and opens a document inside a separate
-// process on each OS. Spike item S1 replaces this with the worker's request loop.
+// The worker process: the only place where PDF documents are parsed (PRD §8).
+//   --serve [--test-commands]   serve requests from the app on stdin/stdout
+//   --self-test <file.pdf>      open a file and print its page count (used by CI)
 
-if (args is not ["--self-test", var path])
+switch (args)
 {
-    Console.Error.WriteLine("Usage: PdfSuite.Pdf.Worker --self-test <file.pdf>");
-    return 2;
+    case ["--serve", .. var options]:
+        {
+            // stdout carries protocol frames only; diagnostics go to stderr.
+            using Stream input = Console.OpenStandardInput();
+            using Stream output = new BufferedStream(Console.OpenStandardOutput(), 1 << 16);
+            return new WorkerHost(input, output, allowTestCommands: options.Contains("--test-commands")).Run();
+        }
+
+    case ["--self-test", var path]:
+        return SelfTest(path);
+
+    default:
+        Console.Error.WriteLine("Usage: PdfSuite.Pdf.Worker --serve [--test-commands] | --self-test <file.pdf>");
+        return 2;
 }
 
-byte[] data;
-try
+static int SelfTest(string path)
 {
-    data = File.ReadAllBytes(path);
-}
-catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-{
-    Console.Error.WriteLine($"Could not read '{path}': {ex.Message}");
-    return 1;
-}
+    byte[] data;
+    try
+    {
+        data = File.ReadAllBytes(path);
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+    {
+        Console.Error.WriteLine($"Could not read '{path}': {ex.Message}");
+        return 1;
+    }
 
-try
-{
-    using IPdfDocument document = new PdfiumEngine().Open(data);
-    PageSize size = document.GetPageSize(0);
-    Console.WriteLine(string.Create(
-        CultureInfo.InvariantCulture,
-        $"{{\"pageCount\":{document.PageCount},\"firstPage\":{{\"width\":{size.Width},\"height\":{size.Height}}}}}"));
-    return 0;
-}
-catch (PdfOpenException ex)
-{
-    Console.Error.WriteLine($"Could not open '{path}': {ex.Message}");
-    return 1;
+    try
+    {
+        using IPdfDocument document = new PdfiumEngine().Open(data);
+        PageSize size = document.GetPageSize(0);
+        Console.WriteLine(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{{\"pageCount\":{document.PageCount},\"firstPage\":{{\"width\":{size.Width},\"height\":{size.Height}}}}}"));
+        return 0;
+    }
+    catch (PdfOpenException ex)
+    {
+        Console.Error.WriteLine($"Could not open '{path}': {ex.Message}");
+        return 1;
+    }
 }

@@ -28,7 +28,15 @@ dotnet run --project src/PdfSuite.Pdf.Worker -- --self-test fixtures/generated/l
 dotnet run --project src/PdfSuite.App
 ```
 
-The fixture generator writes synthetic test PDFs and `manifest.json` to `fixtures/generated/`, which is not committed. Output is byte-for-byte reproducible.
+The fixture generator writes synthetic test PDFs and `manifest.json` to `fixtures/generated/`, which is not committed. Output is byte-for-byte reproducible on one OS; PDFium's output differs between OSes (spike results, finding 8).
+
+The app opens a PDF given on the command line or through **Open PDF…**. Scroll with the wheel or keys, and zoom with Ctrl + wheel or Ctrl + plus/minus. Every document is parsed in a separate worker process. To rerun the S1 measurements (the window must stay visible):
+
+```bash
+dotnet run --project src/PdfSuite.App -c Release -- fixtures/generated/large-2000-pages.pdf --benchmark --kill-worker
+```
+
+Options: `--tile 256|512`, `--software`, `--out results.json`. Results go to `artifacts/benchmarks/`.
 
 ## Layout
 
@@ -36,8 +44,9 @@ The fixture generator writes synthetic test PDFs and `manifest.json` to `fixture
 |---|---|
 | `src/PdfSuite.Pdf.Abstractions` | Engine-neutral interfaces used by the application layers |
 | `src/PdfSuite.Pdf.Pdfium` | PDFium bindings, the engine adapter, and an authoring API |
-| `src/PdfSuite.Pdf.Worker` | The out-of-process engine host (self-test only during S0) |
-| `src/PdfSuite.App` | The Avalonia desktop shell |
+| `src/PdfSuite.Pdf.Remote` | The app-to-worker protocol, worker client, crash-restarting document session, and Windows Job Object |
+| `src/PdfSuite.Pdf.Worker` | The out-of-process engine host (`--serve`), plus `--self-test` for CI |
+| `src/PdfSuite.App` | The Avalonia desktop shell: tiled document view and S1 benchmark |
 | `tools/PdfSuite.FixtureGenerator` | Synthetic, legally distributable test documents |
 | `tests/PdfSuite.Spike.Tests` | Spike tests |
 | `docs/` | PRD, roadmap, agent playbook, UI copy, checklists, spike plan, research, licensing |

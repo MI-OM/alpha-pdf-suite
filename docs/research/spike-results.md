@@ -4,8 +4,8 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
 
 | Item | Status | Outcome |
 |---|---|---|
-| S0 Skeleton, CI, fixtures | Done locally; CI not yet run | Pass on Windows. Linux and macOS need a first CI run |
-| S1 Tiled rendering | Not started | — |
+| S0 Skeleton, CI, fixtures | Done | **Pass.** CI is green on Windows, macOS (arm64), and Linux at `2d40760` (run 39703814388). Fixtures differ between OSes: see finding 8 |
+| S1 Tiled rendering | Windows done; Linux and macOS not measured | **Pass on Windows** against every target. Pipeline tests run on all three OSes in CI. Interactive measurements on Linux and macOS, and worker memory limits there, are still open |
 | S2 Document-text accessibility | Not started | — |
 | S3 Printing | Not started | — |
 | S4 qpdf from .NET | Not started | — |
@@ -66,7 +66,77 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
    - Fixed by regenerating the lock files.
    - `Directory.Build.props` now sends RID restores to `obj/packages.<rid>.lock.json`. Verified by repeating the publish: the committed lock files were unchanged.
 7. **The v4 GitHub Actions run on the deprecated Node 20.** They were moved to checkout v7, setup-dotnet v6, upload-artifact v7, and download-artifact v8 (all Node 24), with `persist-credentials: false`.
+8. **PDFium output is not byte-identical across operating systems.**
+   - At `2d40760`, every OS passed every step: locked restore, build, 15 tests, fixture generation, and the worker self-test. Job times: Windows 85 s, macOS arm64 52 s, Linux 34 s.
+   - The informational comparison of fixture hashes failed, so at least one fixture differs between Linux and Windows or macOS.
+   - The job log and hash artifacts need a GitHub sign-in to read. CI now also publishes each OS's hashes as public annotations, so the next run shows which fixtures differ.
+   - **Consequence until explained:** fixture tests compare content (text, objects, pages), never raw bytes across OSes.
 
 ### Not yet covered by S0
 - **Password-protected, metadata, JavaScript, bookmark, hidden-layer, and vector-art canary fixtures.** They need qpdf or raw object writing, and arrive with S4 and S5.
-- **CI on Linux and macOS.** The workflow is written but has not run.
+
+## S1 — Out-of-process tiled rendering (2026-10-31)
+
+### Built
+- **`PdfSuite.Pdf.Remote`** (new project):
+  - A length-prefixed binary protocol over the worker's stdin and stdout.
+  - `WorkerClient`, with a watchdog that kills a worker whose request takes longer than 15 s.
+  - `DocumentSession`, which restarts a crashed worker and reopens the document. After 3 restarts within 30 s it gives up and enters a *Failed* state.
+  - On Windows, a Job Object: committed-memory cap (default 1.5 GB), the worker killed when the app's handle closes (including when the app crashes), and no Windows Error Reporting dialog if the worker crashes.
+- **Worker `--serve` mode:**
+  - One thread makes every PDFium call, in arrival order.
+  - A reader thread queues requests and drops cancelled ones that have not started.
+  - It keeps 8 pages loaded and exits when stdin closes.
+  - Tiles are capped at 4096 × 4096 px.
+  - Errors carry codes, never document content.
+- **`IPdfDocument.RenderRegion` and `PageSize.ToPixels`:** the worker and the view use the same pixel rounding, so the tile grid always matches what the engine draws.
+- **App:**
+  - `DocumentView` with a tile cache: least recently used tiles are dropped first, under a 384 MB budget, and tiles drawn in the current frame are never evicted.
+  - Low-resolution page previews at 0.3 px/pt, drawn under missing tiles.
+  - Requests in priority order: previews of visible pages, then visible tiles, then one viewport above and below. Requests for tiles that leave that range are cancelled, with at most 24 in flight.
+  - **Open PDF…** through the native file dialog, a status bar, and error messages from the UI copy rules.
+  - `--benchmark`, `--software`, `--tile`, and `--kill-worker` options.
+- **10 new tests on a real worker process:**
+  - page sizes, and the open error for invalid data
+  - text drawn exactly where the page has it
+  - tiles matching the full page
+  - cancellation
+  - worker kill, session restart, and giving up after repeated crashes
+  - the Windows memory limit
+  - the worker ending when the client is disposed
+
+  The total is 25, all passing locally.
+
+### Measurements (Windows)
+Machine: i5-1235U, 12 logical cores, Windows 11 x64, scaling 1.0, 1000 × 701 DIP viewport, Release build, JIT. The document is `large-2000-pages.pdf`, and scrolling runs at a constant 3,000 DIP/s. Raw results are in `docs/research/s1-benchmarks/`.
+
+| Target | GPU, 256 px tiles | GPU, 512 px tiles | Software, 256 px tiles |
+|---|---|---|---|
+| First page sharp after opening, < 2 s | **0.84 s** ✅ | **0.47 s** ✅ | **0.43 s** ✅ |
+| Frame interval p95 ≤ 33 ms (100% / 25% / 400% / 800%) | 17.4 / 17.3 / 17.4 / 17.3 ms ✅ | 17.3 / 17.3 / 17.2 / 17.3 ms ✅ | 31.2 / 31.4 / 31.5 / 31.3 ms ✅ (barely) |
+| No UI stall > 100 ms (worst frame) | 51 ms ✅ | 34 ms ✅ | 35 ms ✅ |
+| App + worker < 1 GB (peak working set) | 641 MB ✅ | 636 MB ✅ | 468 MB ✅ |
+| Frames with blank tiles while scrolling | 0% at 100%, 400%, 800% | 0.2% at 25% only | 0% |
+| Killing the worker mid-scroll | App keeps running; recovered in **200 ms**; no blank frames | not run | not run |
+| Tile latency p50 / p95 (request to drawn) | 2.3 / 7.3 ms | 3.2 / 8.5 ms | 1.9 / 8.0 ms |
+| Worker render time p50 / p95 | 0.07 / 2.3 ms | 0.36 / 2.9 ms | 0.07 / 2.2 ms |
+
+- **Drawing cost:** the UI thread spends under 0.2 ms per frame drawing (p95), so frame pacing is set by the compositor, not by the view.
+- **Visual check:** a window capture shows correct pages, text, and images, with no seams.
+- **Startup:** process start to window took 5.5 s on a cold first launch of a fresh Release build, against 2.9–3.5 s warm in S0. This is S6's problem: NativeAOT and ReadyToRun.
+
+### Findings
+9. **Tiles differ from a full-page render only where a glyph crosses a tile edge.**
+   - PDFium snaps each glyph to whole pixels from the bitmap's origin, so a straddling glyph can be anti-aliased differently in two adjacent tiles.
+   - At 1.5×: 0.25% of the page's pixels differ, all within 12 px of a tile edge, with per-channel deltas up to about 130.
+   - A magnified side-by-side comparison shows no visible seam: a straddling stroke is marginally heavier.
+   - The test now asserts identical pixels away from tile edges, and fewer than 1% differing in total.
+10. **Software rendering is just within budget.** p95 31.2–31.5 ms against 33 ms: frames alternate between 16.7 ms and 33 ms. Machines and VMs without GPU acceleration will be close to the limit. This needs measuring on Linux (S1) and in remote-desktop sessions.
+11. **The tile cache probably dominates app memory.** The app's working set is about 600 MB with GPU rendering, against 468 MB combined with software rendering. That fits the 384 MB tile budget plus GPU-side copies of the tiles, but this is inferred, not profiled. A smaller budget is an easy lever if memory matters more than revisiting pages.
+12. **Worker memory limits exist on Windows only.** The Job Object cap is verified by a test: a 512 MB allocation is refused under a 256 MB cap, and the worker keeps serving. No limit is applied yet on Linux or macOS. `RLIMIT_AS` is expected to conflict with the .NET runtime's large address-space reservations (not yet tested), so cgroups on Linux are the likely route; macOS is to be investigated.
+13. **A cancelled open can leave a document open in the worker until it exits.** This is acceptable for the spike; it needs a close-on-late-arrival rule before Milestone 1.
+
+### Still open for S1
+- **Linux (X11 and XWayland) and macOS:** the interactive benchmark and a visual check. CI runs the pipeline tests on all three OSes.
+- **Worker memory limits on Linux and macOS.**
+- **Display scaling above 1.0:** tile size in device pixels is implemented, but not yet measured.

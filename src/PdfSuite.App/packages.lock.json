@@ -188,6 +188,49 @@
         "type": "Transitive",
         "resolved": "0.94.1",
         "contentHash": "11YMr7FnAbL83bQmVxlhbIKHvSLxjO81D12Ej0QMSGXMDTxNA9MTOa4MQxx43nv5el/efuPHwzyrj6a5ha2gug=="
+      },
+      "pdfsuite.pdf.abstractions": {
+        "type": "Project"
+      },
+      "pdfsuite.pdf.pdfium": {
+        "type": "Project",
+        "dependencies": {
+          "PdfSuite.Pdf.Abstractions": "[1.0.0, )",
+          "bblanchon.PDFium.Linux": "[158.0.8111, )",
+          "bblanchon.PDFium.Win32": "[158.0.8111, )",
+          "bblanchon.PDFium.macOS": "[158.0.8111, )"
+        }
+      },
+      "pdfsuite.pdf.remote": {
+        "type": "Project",
+        "dependencies": {
+          "PdfSuite.Pdf.Abstractions": "[1.0.0, )"
+        }
+      },
+      "pdfsuite.pdf.worker": {
+        "type": "Project",
+        "dependencies": {
+          "PdfSuite.Pdf.Pdfium": "[1.0.0, )",
+          "PdfSuite.Pdf.Remote": "[1.0.0, )"
+        }
+      },
+      "bblanchon.PDFium.Linux": {
+        "type": "CentralTransitive",
+        "requested": "[158.0.8111, )",
+        "resolved": "158.0.8111",
+        "contentHash": "IbrsI6IenDNmH/vQGUsN6GouGhoKaJ23YtEfD3xpuEPURVc3pADGukDCtRL9i5OLcd3Jp55I3Ln00+qORCKsxw=="
+      },
+      "bblanchon.PDFium.macOS": {
+        "type": "CentralTransitive",
+        "requested": "[158.0.8111, )",
+        "resolved": "158.0.8111",
+        "contentHash": "6GL1+vYRVCc3Q1LsmTLENlv/ZjRbLt3LZHG1nBnSxi9QDKfKWDViBX5VJt/wFlh2qpweEiLc9U6bFTlLo67y0A=="
+      },
+      "bblanchon.PDFium.Win32": {
+        "type": "CentralTransitive",
+        "requested": "[158.0.8111, )",
+        "resolved": "158.0.8111",
+        "contentHash": "+e5VgLjNYxSr31l7nOyo9qchHjIpD+F8IjZztGe5oaXjmy7KBw9yoal/UtoQR5JD69pfGyf9VXp1jgZZxD7Nbg=="
       }
     }
   }

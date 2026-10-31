@@ -12,6 +12,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PdfSuite.Pdf.Pdfium\PdfSuite.Pdf.Pdfium.csproj" />
+    <ProjectReference Include="..\..\src\PdfSuite.Pdf.Remote\PdfSuite.Pdf.Remote.csproj" />
+    <!-- Referenced so the worker executable is copied next to the tests, which start it. -->
+    <ProjectReference Include="..\..\src\PdfSuite.Pdf.Worker\PdfSuite.Pdf.Worker.csproj" />
     <ProjectReference Include="..\..\tools\PdfSuite.FixtureGenerator\PdfSuite.FixtureGenerator.csproj" />
   </ItemGroup>
 

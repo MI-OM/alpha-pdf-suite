@@ -3,12 +3,19 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PdfSuite.Pdf.Remote\PdfSuite.Pdf.Remote.csproj" />
+    <!-- Referenced so the worker executable is built and copied next to the app. The app never calls PDFium itself. -->
+    <ProjectReference Include="..\PdfSuite.Pdf.Worker\PdfSuite.Pdf.Worker.csproj" />
   </ItemGroup>
 
 </Project>

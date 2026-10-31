@@ -3,10 +3,12 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsAotCompatible>true</IsAotCompatible>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\PdfSuite.Pdf.Pdfium\PdfSuite.Pdf.Pdfium.csproj" />
+    <ProjectReference Include="..\PdfSuite.Pdf.Remote\PdfSuite.Pdf.Remote.csproj" />
   </ItemGroup>
 
 </Project>
