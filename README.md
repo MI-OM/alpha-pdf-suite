@@ -8,7 +8,13 @@ A free, open-source, cross-platform desktop PDF application for Windows, macOS, 
 
 ## Build and test
 
-Prerequisites: the .NET 10 SDK (version pinned in `global.json`).
+Prerequisites: exactly the .NET SDK version pinned in `global.json` (`rollForward: disable`).
+
+The SDK adds some packages itself, such as `Microsoft.NET.ILLink.Tasks`, at its own version. Those versions are recorded in the lock files, so any other SDK, even a newer patch, fails the locked restore. To move to a new SDK:
+1. Install it.
+2. Update `global.json`.
+3. Run `dotnet restore PdfSuite.slnx --force-evaluate`.
+4. Commit `global.json` and the lock files together.
 
 Opt out of .NET SDK telemetry in your shell first. The repository itself disables the Avalonia build telemetry and the test-platform telemetry (see `docs/licensing/dependency-inventory.md` §3).
 

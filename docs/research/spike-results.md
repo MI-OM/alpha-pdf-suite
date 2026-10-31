@@ -135,6 +135,12 @@ Machine: i5-1235U, 12 logical cores, Windows 11 x64, scaling 1.0, 1000 × 701 DI
 11. **The tile cache probably dominates app memory.** The app's working set is about 600 MB with GPU rendering, against 468 MB combined with software rendering. That fits the 384 MB tile budget plus GPU-side copies of the tiles, but this is inferred, not profiled. A smaller budget is an easy lever if memory matters more than revisiting pages.
 12. **Worker memory limits exist on Windows only.** The Job Object cap is verified by a test: a 512 MB allocation is refused under a 256 MB cap, and the worker keeps serving. No limit is applied yet on Linux or macOS. `RLIMIT_AS` is expected to conflict with the .NET runtime's large address-space reservations (not yet tested), so cgroups on Linux are the likely route; macOS is to be investigated.
 13. **A cancelled open can leave a document open in the worker until it exits.** This is acceptable for the spike; it needs a close-on-late-arrival rule before Milestone 1.
+14. **A .NET patch release broke CI with no code change.**
+    - On 2026-10-25, .NET 10.0.14 and SDK 10.0.403 were released.
+    - With `global.json` set to `rollForward: latestFeature`, `actions/setup-dotnet` installs the newest 10.0 SDK.
+    - That SDK implicitly references `Microsoft.NET.ILLink.Tasks` 10.0.14, while the lock files recorded 10.0.13. The locked restore then failed on all three OSes (run 41165944204, `59ef911`).
+    - **Fix:** the SDK is pinned exactly (`rollForward: disable`). Moving to a new SDK is now a deliberate commit that updates `global.json` and the lock files together (README).
+    - **Consequence:** .NET security patches arrive only when someone bumps the pin. That needs a routine, monthly after Patch Tuesday, because self-contained builds ship the pinned runtime.
 
 ### Still open for S1
 - **Linux (X11 and XWayland) and macOS:** the interactive benchmark and a visual check. CI runs the pipeline tests on all three OSes.
