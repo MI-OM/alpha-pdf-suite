@@ -24,6 +24,12 @@ export DOTNET_CLI_TELEMETRY_OPTOUT=1
 
 On Windows PowerShell, use `$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'` instead.
 
+Fetch qpdf's native library once per machine. The script downloads the pinned official release and checks its SHA-256:
+
+```bash
+pwsh tools/qpdf/fetch-qpdf.ps1
+```
+
 Then:
 
 ```bash
@@ -50,6 +56,7 @@ Options: `--tile 256|512`, `--software`, `--out results.json`. Results go to `ar
 |---|---|
 | `src/PdfSuite.Pdf.Abstractions` | Engine-neutral interfaces used by the application layers |
 | `src/PdfSuite.Pdf.Pdfium` | PDFium bindings, the engine adapter, and an authoring API |
+| `src/PdfSuite.Pdf.Qpdf` | qpdf bindings: AES-256 encryption, metadata, full rewrites (spike S4) |
 | `src/PdfSuite.Pdf.Remote` | The app-to-worker protocol, worker client, crash-restarting document session, and Windows Job Object |
 | `src/PdfSuite.Pdf.Worker` | The out-of-process engine host (`--serve`), plus `--self-test` for CI |
 | `src/PdfSuite.App` | The Avalonia desktop shell: tiled document view and S1 benchmark |

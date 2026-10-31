@@ -147,6 +147,12 @@
           "bblanchon.PDFium.macOS": "[158.0.8111, )"
         }
       },
+      "pdfsuite.pdf.qpdf": {
+        "type": "Project",
+        "dependencies": {
+          "PdfSuite.Pdf.Abstractions": "[1.0.0, )"
+        }
+      },
       "pdfsuite.pdf.remote": {
         "type": "Project",
         "dependencies": {

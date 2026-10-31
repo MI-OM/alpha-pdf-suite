@@ -8,7 +8,7 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
 | S1 Tiled rendering | Windows done; Linux and macOS not measured | **Pass on Windows** against every target. The pipeline tests pass on all three OSes in CI (`7da2c2a`). Interactive measurements on Linux and macOS, and worker memory limits there, are still open |
 | S2 Document-text accessibility | Built; verified on Windows through UI Automation | **Promising.** The tree and keyboard reading behave as designed, with one focus event per key, and there is no measurable frame-pacing cost (A/B benchmark). Real screen-reader checks (NVDA, Narrator) are pending with the maintainer; Orca and VoiceOver need Linux and a Mac |
 | S3 Printing | Windows done; macOS and Linux planned and estimated | **Pass on Windows.** The worker prints with exact page geometry and vector output, but slowly: about 1 s and 256 KB per page with Print to PDF. macOS and Linux have a researched plan and estimates, not yet a proof of concept |
-| S4 qpdf from .NET | Not started | — |
+| S4 qpdf from .NET | Built; passes on Windows; CI on all three OSes pending | **Pass on Windows:** AES-256 encryption, decryption, Unicode metadata, and full rewrites, all checked with PDFium as an independent reader |
 | S5 Redaction method | Not started | — |
 | S6 Packaging | Workflow scaffolded | Not started. A local win-x64 self-contained publish works: 211 MB, of which about 100 MB is SkiaSharp and HarfBuzz native `.pdb` symbols. The published worker self-test passes |
 
@@ -306,3 +306,40 @@ Same rule: the app never parses the document. Both OSes use CUPS, so one approac
 **Fallback where none of this works:** render pages in the worker at printer resolution and send raster images to CUPS. This matches PDFium exactly, but jobs are large.
 
 **Confidence: low to medium.** These are estimates from documentation, not measurements. Each route needs a 1-day proof of concept on a real machine (spike plan §9: Linux environment and Mac access).
+
+## S4 — qpdf from .NET (2026-10-31)
+
+### Built
+- **`tools/qpdf/fetch-qpdf.ps1`:**
+  - Downloads qpdf 12.4.2's official prebuilt archive for a runtime identifier: Windows x64 and arm64, Linux x64 and arm64, macOS arm64 and x64.
+  - Checks it against a SHA-256 pinned in the script (from qpdf's published checksum list), and refuses and deletes it on a mismatch.
+  - Copies the library files to `artifacts/qpdf/native/<rid>/`. A second run with the same version does nothing.
+  - CI runs it before restore. A build without it fails with an instruction.
+- **`PdfSuite.Pdf.Qpdf`:**
+  - project-owned `LibraryImport` bindings to qpdf's C API
+  - a resolver that loads the versioned library file by path, and on Linux first loads the libraries qpdf's archive bundles
+  - `QpdfStructure`: AES-256 encryption (PDF 2.0, revision 6) with permissions; decryption; document information read and write through qpdf's object API; full rewrites, optionally "inspectable" (decoded streams, no object streams)
+  - `PdfText.Contains`: searches raw bytes for text as a literal, as hex in either case, and as UTF-16BE
+- **`PdfiumDocument.GetMetadata`,** so qpdf's output is checked by an independent reader.
+
+### Evidence (Windows; CI for all three OSes pending)
+8 new tests, all passing (39 in total):
+- **Encryption:** AES-256 output has `/V 5 /R 6`. PDFium refuses it with no password and with a wrong one, and opens it with either the user or the owner password.
+- **Decryption:** with the right password, the output opens unencrypted. With a wrong one, qpdf reports a password error (code 4).
+- **Metadata:** "Résumé – naïve test ✓" round-trips through qpdf, and PDFium reads it identically, also after encryption. A null value removes a key.
+- **Full rewrite:** keeps only the current revision, so the earlier revision's canary is gone. A negative control proves the search does find that canary in the first revision on its own.
+- **Determinism:** unencrypted rewrites are byte-identical.
+- **Invalid input:** raises `QpdfException`.
+
+### Findings
+26. **qpdf works from .NET with pinned, verified official binaries for all six targets.** No NuGet package was needed: the only one, `QPdf.RuntimeLibraries`, is a community package stuck on 11.9.1.
+    - The Linux archive bundles **LGPL libraries** (GnuTLS and its dependencies), which brings distribution obligations; Windows and macOS do not.
+    - Building qpdf with only its own crypto provider would remove them. Decide that together with building PDFium ourselves (findings 21 and Flathub).
+27. **qpdf's `qpdf_set_info_key` stores the bytes it is given, not text.** A UTF-8 title came back intact through qpdf, but was stored as raw bytes (`<52c3a973…>`) that every other reader would show as "RÃ©sumÃ©". Metadata now goes through qpdf's object API (`qpdf_oh_new_unicode_string`), and the test checks with PDFium.
+28. **Some of qpdf's C functions throw C++ exceptions instead of returning an error.**
+    - Setting encryption while deterministic IDs are on raised `SEHException` on Windows. On Linux and macOS a C++ exception crossing into .NET aborts the process.
+    - The code avoids that combination, and the bindings document the hazard.
+    - **This is another reason qpdf must run only in the worker,** where a crash is contained.
+29. **PDFium writes text as hex strings in `TJ` arrays,** for example `[<43414E4152592D3031>] TJ`. A literal byte search for a canary therefore never matches, and a leak check built on one passes vacuously.
+    - `PdfText.Contains` searches all common forms, and every leak test now needs a negative control that proves the search can fail.
+    - Font encodings that remap codes are still not covered; S5's verifier adds text extraction for those.

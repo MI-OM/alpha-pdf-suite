@@ -254,6 +254,28 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
         }
     }
 
+    /// <summary>A document information value such as "Title" or "Author"; empty if absent.</summary>
+    public string GetMetadata(string tag)
+    {
+        lock (PdfiumLibrary.Sync)
+        {
+            ThrowIfDisposed();
+            int needed = (int)PdfiumNative.FPDF_GetMetaText(_document, tag, null, new CULong(0)).Value;
+            if (needed <= 2)
+            {
+                return string.Empty;
+            }
+
+            var buffer = new char[needed / 2];
+            fixed (char* p = buffer)
+            {
+                PdfiumNative.FPDF_GetMetaText(_document, tag, p, new CULong((uint)needed));
+            }
+
+            return new string(buffer, 0, buffer.Length - 1);
+        }
+    }
+
     public int AttachmentCount
     {
         get

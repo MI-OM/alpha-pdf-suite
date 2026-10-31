@@ -44,6 +44,10 @@ internal static unsafe partial class PdfiumNative
     [LibraryImport(Library)]
     internal static partial int FPDF_GetPageCount(nint document);
 
+    // Writes the value as UTF-16LE with a terminator; returns the byte count needed.
+    [LibraryImport(Library, StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial CULong FPDF_GetMetaText(nint document, string tag, void* buffer, CULong bufferLength);
+
     [LibraryImport(Library)]
     internal static partial int FPDF_GetPageSizeByIndexF(nint document, int pageIndex, FS_SIZEF* size);
 

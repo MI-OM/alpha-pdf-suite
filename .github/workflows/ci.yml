@@ -34,6 +34,10 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Fetch qpdf (pinned release, SHA-256 verified)
+        shell: pwsh
+        run: ./tools/qpdf/fetch-qpdf.ps1
+
       - name: Restore (locked)
         run: dotnet restore PdfSuite.slnx --locked-mode
 

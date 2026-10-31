@@ -3,6 +3,7 @@
     <Project Path="src/PdfSuite.App/PdfSuite.App.csproj" />
     <Project Path="src/PdfSuite.Pdf.Abstractions/PdfSuite.Pdf.Abstractions.csproj" />
     <Project Path="src/PdfSuite.Pdf.Pdfium/PdfSuite.Pdf.Pdfium.csproj" />
+    <Project Path="src/PdfSuite.Pdf.Qpdf/PdfSuite.Pdf.Qpdf.csproj" />
     <Project Path="src/PdfSuite.Pdf.Remote/PdfSuite.Pdf.Remote.csproj" />
     <Project Path="src/PdfSuite.Pdf.Worker/PdfSuite.Pdf.Worker.csproj" />
   </Folder>

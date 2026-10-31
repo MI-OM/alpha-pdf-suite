@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsAotCompatible>true</IsAotCompatible>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <!--
+    qpdf's native library is not a NuGet package: tools/qpdf/fetch-qpdf.ps1 downloads the official
+    release for a runtime identifier, verifies a pinned SHA-256, and puts it in
+    artifacts/qpdf/native/<rid>/. Those files are copied next to every program that references
+    this project. Builds use the machine's RID; publishes use the RID being published.
+  -->
+  <PropertyGroup>
+    <_QpdfOs Condition="$([MSBuild]::IsOSPlatform('Windows'))">win</_QpdfOs>
+    <_QpdfOs Condition="$([MSBuild]::IsOSPlatform('Linux'))">linux</_QpdfOs>
+    <_QpdfOs Condition="$([MSBuild]::IsOSPlatform('OSX'))">osx</_QpdfOs>
+    <_QpdfArch>$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant())</_QpdfArch>
+    <QpdfRid Condition="'$(QpdfRid)' == '' and '$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</QpdfRid>
+    <QpdfRid Condition="'$(QpdfRid)' == ''">$(_QpdfOs)-$(_QpdfArch)</QpdfRid>
+    <QpdfNativeDir>$(MSBuildThisFileDirectory)..\..\artifacts\qpdf\native\$(QpdfRid)\</QpdfNativeDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(QpdfNativeDir)*" Exclude="$(QpdfNativeDir)qpdf-version.txt"
+          Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+
+  <Target Name="RequireQpdfNative" BeforeTargets="Build" Condition="!Exists('$(QpdfNativeDir)qpdf-version.txt')">
+    <Error Text="qpdf's native library for $(QpdfRid) is missing. Run: pwsh tools/qpdf/fetch-qpdf.ps1 -Rid $(QpdfRid)" />
+  </Target>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PdfSuite.Pdf.Abstractions\PdfSuite.Pdf.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

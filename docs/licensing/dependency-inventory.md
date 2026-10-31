@@ -16,6 +16,22 @@
 | Avalonia.Themes.Fluent | 12.1.4 | MIT | As above | App | Yes | — | — | — |
 | xunit.v3 | 4.0.2 | Apache-2.0 | github.com/xunit/xunit | Tests only | No | — | **Via Microsoft.Testing.Extensions.Telemetry (disabled; §3)** | Yes |
 
+### Native libraries fetched outside NuGet
+
+| Library | Version | Licence | Source and verification | Used by | Bundled with it | Contacts network? |
+|---|---|---|---|---|---|---|
+| qpdf | 12.4.2 | Apache-2.0 | Official release archives from github.com/qpdf/qpdf, fetched by `tools/qpdf/fetch-qpdf.ps1`. Checked against SHA-256 values pinned in the script, copied from qpdf's published `qpdf-12.4.2.sha256`. The Sigstore signature on that list is not yet verified | `PdfSuite.Pdf.Qpdf` (tests now; the worker from S5) | See the next table | No |
+
+What each platform's archive brings, and what it obliges us to do:
+
+| Platform | Files shipped | Licences | Obligations and notes |
+|---|---|---|---|
+| Windows x64 and arm64 | `qpdf30.dll`, with OpenSSL linked statically. Also the Microsoft C++ runtime: `vcruntime140*.dll`, `msvcp140*.dll`, `concrt140.dll` | Apache-2.0 (qpdf, OpenSSL 3); Microsoft Visual C++ Redistributable terms | Keep the notices. The MSVC runtime files may be redistributed under Microsoft's terms. Crypto providers: `openssl` and `native` |
+| Linux x64 and arm64 | `libqpdf.so.30.4.2`, plus GnuTLS, Nettle and Hogweed, libtasn1, libunistring, libidn2, p11-kit, libffi, libjpeg | GnuTLS, libtasn1: **LGPL-2.1+**. Nettle, Hogweed, libunistring, libidn2: **LGPL-3+ or GPL-2+**. p11-kit: BSD-3-Clause. libffi: MIT. libjpeg: IJG | **LGPL obligations for distribution:** offer the source of those libraries, and let users replace them (dynamic linking satisfies this). That is compatible with Apache-2.0, but it is release work. **Alternative:** build qpdf with only its own `native` crypto provider, which removes GnuTLS and its dependencies. Decide this with the Flathub source-build question (S1 finding, S3 finding 21) |
+| macOS arm64 and x64 | `libqpdf.30.4.2.dylib` | Apache-2.0 | No bundled third-party libraries |
+
+Not used: the NuGet packages `QPdf.RuntimeLibraries` (a community package, stuck on qpdf 11.9.1) and `QPdfNet` (a wrapper around the command-line tool).
+
 Not used, on purpose:
 - **PDFiumCore.** The project owns its bindings instead (`src/PdfSuite.Pdf.Pdfium/Native/PdfiumNative.cs`).
   - PDFiumCore trails the native packages by one build.
