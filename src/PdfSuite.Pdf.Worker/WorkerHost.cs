@@ -97,6 +97,9 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
                 case MessageKind.Close:
                     Close(request);
                     break;
+                case MessageKind.GetTextLines:
+                    GetTextLines(request);
+                    break;
                 case MessageKind.AllocateForTest when allowTestCommands:
                     AllocateForTest(request);
                     break;
@@ -186,6 +189,30 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
         {
             ArrayPool<byte>.Shared.Return(pixels);
         }
+    }
+
+    // Payload: [int32 count] then per line [4 x double bounds][int32 UTF-8 length][UTF-8 text].
+    private void GetTextLines(in Message request)
+    {
+        var reader = new PayloadReader(request.Payload);
+        IPdfDocument document = _documents[reader.ReadInt32()];
+        IReadOnlyList<TextLine> lines = document.GetTextLines(reader.ReadInt32());
+
+        byte[][] texts = lines.Select(l => Encoding.UTF8.GetBytes(l.Text)).ToArray();
+        byte[] payload = new byte[4 + texts.Sum(t => 36 + t.Length)];
+        var writer = new PayloadWriter(payload);
+        writer.WriteInt32(lines.Count);
+        for (int i = 0; i < lines.Count; i++)
+        {
+            writer.WriteDouble(lines[i].Left);
+            writer.WriteDouble(lines[i].Top);
+            writer.WriteDouble(lines[i].Right);
+            writer.WriteDouble(lines[i].Bottom);
+            writer.WriteInt32(texts[i].Length);
+            writer.WriteBytes(texts[i]);
+        }
+
+        MessageIO.Write(output, MessageKind.TextLines, request.RequestId, payload);
     }
 
     private void Close(in Message request)

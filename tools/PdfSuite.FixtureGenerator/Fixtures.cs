@@ -55,6 +55,10 @@ public static class Fixtures
     [
         new(new("simple-text.pdf", "Three Letter pages of plain text."), SimpleText),
         new(new(
+            "image-only-middle-page.pdf",
+            "Three pages; the middle one is only an image, with no text, like an unprocessed scan."),
+            ImageOnlyMiddlePage),
+        new(new(
             "large-2000-pages.pdf",
             "2,000 pages: Letter portrait, every 10th page landscape, every 50th page A4; text, rectangles, and an image every 25th page."),
             () => LargeMixed()),
@@ -87,6 +91,25 @@ public static class Fixtures
             using var page = document.AddPage(LetterWidth, LetterHeight);
             page.AddText($"Simple text page {i + 1}", 72, 720, 16);
             AddFiller(page, i, top: 690, lineCount: 40, fontSize: 11);
+        }
+
+        return Finish(document);
+    }
+
+    public static byte[] ImageOnlyMiddlePage()
+    {
+        using var document = PdfiumDocumentWriter.CreateNew();
+        for (int i = 0; i < 3; i++)
+        {
+            using var page = document.AddPage(LetterWidth, LetterHeight);
+            if (i == 1)
+            {
+                page.AddImage(Gradient(256, 256), 72, 72, LetterWidth - 144, LetterHeight - 144);
+                continue;
+            }
+
+            page.AddText($"Text page {(i / 2) + 1}", 72, 720, 16);
+            AddFiller(page, i, top: 690, lineCount: 5, fontSize: 11);
         }
 
         return Finish(document);

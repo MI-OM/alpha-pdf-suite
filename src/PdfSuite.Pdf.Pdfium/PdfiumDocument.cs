@@ -91,6 +91,87 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
         }
     }
 
+    public IReadOnlyList<TextLine> GetTextLines(int pageIndex)
+    {
+        lock (PdfiumLibrary.Sync)
+        {
+            double pageHeight = GetPageSize(pageIndex).Height;
+            nint textPage = PdfiumNative.FPDFText_LoadPage(GetLoadedPage(pageIndex));
+            if (textPage == 0)
+            {
+                throw new InvalidOperationException($"PDFium could not extract text from page {pageIndex}.");
+            }
+
+            try
+            {
+                int count = PdfiumNative.FPDFText_CountChars(textPage);
+                if (count <= 0)
+                {
+                    return [];
+                }
+
+                var text = new char[count + 1];
+                fixed (char* p = text)
+                {
+                    PdfiumNative.FPDFText_GetText(textPage, 0, count, p);
+                }
+
+                // PDFium separates the lines it detects with generated "\r\n" characters. Indexes
+                // into this text are character indexes in the text page, which the rectangle calls use.
+                // (A character outside the Basic Multilingual Plane would shift them; acceptable for the spike.)
+                var lines = new List<TextLine>();
+                int start = 0;
+                for (int i = 0; i <= count; i++)
+                {
+                    if (i < count && text[i] is not ('\r' or '\n'))
+                    {
+                        continue;
+                    }
+
+                    if (i > start)
+                    {
+                        string lineText = new string(text, start, i - start).Trim();
+                        if (lineText.Length > 0 && TryGetBounds(textPage, start, i - start, pageHeight) is { } bounds)
+                        {
+                            lines.Add(new TextLine(lineText, bounds.Left, bounds.Top, bounds.Right, bounds.Bottom));
+                        }
+                    }
+
+                    start = i + 1;
+                }
+
+                return lines;
+            }
+            finally
+            {
+                PdfiumNative.FPDFText_ClosePage(textPage);
+            }
+        }
+    }
+
+    /// <summary>Union of the text rectangles of a character range, converted to top-left-origin points.</summary>
+    private static (double Left, double Top, double Right, double Bottom)? TryGetBounds(nint textPage, int start, int count, double pageHeight)
+    {
+        int rects = PdfiumNative.FPDFText_CountRects(textPage, start, count);
+        double left = double.MaxValue, top = double.MinValue, right = double.MinValue, bottom = double.MaxValue;
+        for (int r = 0; r < rects; r++)
+        {
+            double rl, rt, rr, rb;
+            if (PdfiumNative.FPDFText_GetRect(textPage, r, &rl, &rt, &rr, &rb) == 0)
+            {
+                continue;
+            }
+
+            left = Math.Min(left, rl);
+            right = Math.Max(right, rr);
+            top = Math.Max(top, rt);
+            bottom = Math.Min(bottom, rb);
+        }
+
+        // PDF space has its origin at the bottom-left; flip so callers measure from the top.
+        return left <= right ? (left, pageHeight - top, right, pageHeight - bottom) : null;
+    }
+
     public void RenderRegion(int pageIndex, double pixelsPerPoint, PixelRegion region, Span<byte> bgra)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pixelsPerPoint);

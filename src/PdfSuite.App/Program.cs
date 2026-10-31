@@ -9,12 +9,13 @@ namespace PdfSuite.App;
 /// Command line: PdfSuite.App [file.pdf] [--benchmark] [--software] [--tile 256|512]
 /// [--kill-worker] [--out results.json]. --benchmark runs the S1 measurements on the file and exits.
 /// </summary>
-internal sealed record AppOptions(string? File, bool Benchmark, bool Software, int TileSize, bool KillWorker, string? OutputPath)
+internal sealed record AppOptions(
+    string? File, bool Benchmark, bool Software, int TileSize, bool KillWorker, string? OutputPath, bool NoReadingElements = false)
 {
     public static AppOptions Parse(string[] args)
     {
         string? file = null, output = null;
-        bool benchmark = false, software = false, killWorker = false;
+        bool benchmark = false, software = false, killWorker = false, noReadingElements = false;
         int tileSize = 256;
         for (int i = 0; i < args.Length; i++)
         {
@@ -23,13 +24,14 @@ internal sealed record AppOptions(string? File, bool Benchmark, bool Software, i
                 case "--benchmark": benchmark = true; break;
                 case "--software": software = true; break;
                 case "--kill-worker": killWorker = true; break;
+                case "--no-reading-elements": noReadingElements = true; break;
                 case "--tile" when i + 1 < args.Length: tileSize = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--out" when i + 1 < args.Length: output = args[++i]; break;
                 default: file = args[i]; break;
             }
         }
 
-        return new AppOptions(file, benchmark, software, tileSize, killWorker, output);
+        return new AppOptions(file, benchmark, software, tileSize, killWorker, output, noReadingElements);
     }
 }
 

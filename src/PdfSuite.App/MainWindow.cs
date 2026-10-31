@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Platform.Storage;
@@ -25,7 +26,7 @@ internal sealed class MainWindow : Window
         Width = 1000;
         Height = 800;
 
-        _view = new DocumentView { TileSize = options.TileSize };
+        _view = new DocumentView { TileSize = options.TileSize, ReadingElementsEnabled = !options.NoReadingElements };
         _view.StatusChanged += UpdateStatus;
 
         var open = new Button { Content = "Open PDF…" };
@@ -133,6 +134,7 @@ internal sealed class MainWindow : Window
             _view.SetDocument(session);
             previous?.Dispose();
             _documentName = name;
+            AutomationProperties.SetName(_view, name);
             ShowMessage(null);
             _view.Focus();
             return true;

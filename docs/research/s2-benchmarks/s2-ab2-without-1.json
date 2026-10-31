@@ -1,0 +1,202 @@
+{
+  "spikeItem": "S1",
+  "recordedAt": "2026-10-31T02:01:21.9540001-02:30",
+  "environment": {
+    "os": "Microsoft Windows 10.0.26300",
+    "architecture": "X64",
+    "processors": 12,
+    "renderScaling": 1,
+    "viewportDips": {
+      "width": 1000,
+      "height": 701
+    },
+    "rendering": "default (GPU where available)",
+    "tileSize": 256,
+    "readingElements": false,
+    "build": "Release"
+  },
+  "document": {
+    "file": "large-2000-pages.pdf",
+    "pages": 2000
+  },
+  "startup": {
+    "processStartToWindowMs": 1184,
+    "openMs": 352,
+    "openToFirstPageSharpMs": 510,
+    "processStartToFirstPageSharpMs": 1693
+  },
+  "phases": [
+    {
+      "name": "scroll at 100%",
+      "zoom": 1,
+      "settledBeforeScroll": true,
+      "zoomAndJumpToSharpMs": 4,
+      "seconds": 15,
+      "frames": 901,
+      "extraTicks": 0,
+      "frameIntervalMs": {
+        "count": 900,
+        "p50": 16.68,
+        "p95": 17.75,
+        "p99": 18.64,
+        "max": 30.8
+      },
+      "stallsOver50Ms": [],
+      "gc": {
+        "gen0": 12,
+        "gen1": 7,
+        "gen2": 6,
+        "pauseMs": 23.6,
+        "allocatedMb": 38.5
+      },
+      "framesOver33Ms": 0,
+      "uiThreadDrawMs": {
+        "count": 901,
+        "p50": 0.03,
+        "p95": 0.13,
+        "p99": 0.21,
+        "max": 2.64
+      },
+      "framesWithBlankTilesPercent": 0,
+      "framesWithPreviewOnlyTilesPercent": 0,
+      "workerKilledAtSeconds": null,
+      "recoveryMs": null,
+      "appStillRunning": true
+    },
+    {
+      "name": "scroll at 25%",
+      "zoom": 0.25,
+      "settledBeforeScroll": true,
+      "zoomAndJumpToSharpMs": 8,
+      "seconds": 8,
+      "frames": 481,
+      "extraTicks": 0,
+      "frameIntervalMs": {
+        "count": 480,
+        "p50": 16.69,
+        "p95": 17.81,
+        "p99": 18.52,
+        "max": 27.51
+      },
+      "stallsOver50Ms": [],
+      "gc": {
+        "gen0": 4,
+        "gen1": 1,
+        "gen2": 1,
+        "pauseMs": 6.3,
+        "allocatedMb": 14
+      },
+      "framesOver33Ms": 0,
+      "uiThreadDrawMs": {
+        "count": 481,
+        "p50": 0.02,
+        "p95": 0.06,
+        "p99": 0.09,
+        "max": 0.24
+      },
+      "framesWithBlankTilesPercent": 0,
+      "framesWithPreviewOnlyTilesPercent": 0.2,
+      "workerKilledAtSeconds": null,
+      "recoveryMs": null,
+      "appStillRunning": true
+    },
+    {
+      "name": "scroll at 400%",
+      "zoom": 4,
+      "settledBeforeScroll": true,
+      "zoomAndJumpToSharpMs": 17,
+      "seconds": 8,
+      "frames": 482,
+      "extraTicks": 0,
+      "frameIntervalMs": {
+        "count": 481,
+        "p50": 16.67,
+        "p95": 17.95,
+        "p99": 18.82,
+        "max": 30.41
+      },
+      "stallsOver50Ms": [],
+      "gc": {
+        "gen0": 4,
+        "gen1": 2,
+        "gen2": 2,
+        "pauseMs": 6.2,
+        "allocatedMb": 11.6
+      },
+      "framesOver33Ms": 0,
+      "uiThreadDrawMs": {
+        "count": 482,
+        "p50": 0.03,
+        "p95": 0.07,
+        "p99": 0.12,
+        "max": 0.3
+      },
+      "framesWithBlankTilesPercent": 0,
+      "framesWithPreviewOnlyTilesPercent": 0,
+      "workerKilledAtSeconds": null,
+      "recoveryMs": null,
+      "appStillRunning": true
+    },
+    {
+      "name": "scroll at 800%",
+      "zoom": 8,
+      "settledBeforeScroll": true,
+      "zoomAndJumpToSharpMs": 16,
+      "seconds": 8,
+      "frames": 482,
+      "extraTicks": 0,
+      "frameIntervalMs": {
+        "count": 481,
+        "p50": 16.63,
+        "p95": 18.13,
+        "p99": 19.68,
+        "max": 26.53
+      },
+      "stallsOver50Ms": [],
+      "gc": {
+        "gen0": 2,
+        "gen1": 1,
+        "gen2": 1,
+        "pauseMs": 2.7,
+        "allocatedMb": 10.8
+      },
+      "framesOver33Ms": 0,
+      "uiThreadDrawMs": {
+        "count": 482,
+        "p50": 0.03,
+        "p95": 0.07,
+        "p99": 0.1,
+        "max": 0.11
+      },
+      "framesWithBlankTilesPercent": 0,
+      "framesWithPreviewOnlyTilesPercent": 0,
+      "workerKilledAtSeconds": null,
+      "recoveryMs": null,
+      "appStillRunning": true
+    }
+  ],
+  "tiles": {
+    "count": 1841,
+    "latencyMs": {
+      "count": 1841,
+      "p50": 2.02,
+      "p95": 7.34,
+      "p99": 44.04,
+      "max": 47.61
+    },
+    "workerRenderMs": {
+      "count": 1841,
+      "p50": 0.09,
+      "p95": 2.42,
+      "p99": 3.57,
+      "max": 21.25
+    }
+  },
+  "memory": {
+    "peakAppWorkingSetMb": 468.5,
+    "peakAppPrivateMb": 500,
+    "peakWorkerWorkingSetMb": 47,
+    "peakWorkerPrivateMb": 31,
+    "peakCombinedWorkingSetMb": 514.4
+  }
+}

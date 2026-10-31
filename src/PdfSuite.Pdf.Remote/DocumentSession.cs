@@ -79,6 +79,19 @@ public sealed class DocumentSession : IDisposable
     public async Task<RenderedTile> RenderTileAsync(
         int pageIndex, double pixelsPerPoint, PixelRegion region, CancellationToken cancellationToken = default)
     {
+        var (client, documentId) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
+        return await client.RenderTileAsync(documentId, pageIndex, pixelsPerPoint, region, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<TextLine>> GetTextLinesAsync(int pageIndex, CancellationToken cancellationToken = default)
+    {
+        var (client, documentId) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
+        return await client.GetTextLinesAsync(documentId, pageIndex, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Waits out any restart, then returns the current worker and its id for the document.</summary>
+    private async Task<(WorkerClient Client, int DocumentId)> ReadyClientAsync(CancellationToken cancellationToken)
+    {
         Task ready;
         lock (_gate)
         {
@@ -88,8 +101,6 @@ public sealed class DocumentSession : IDisposable
 
         await ready.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        WorkerClient client;
-        int documentId;
         lock (_gate)
         {
             if (State == SessionState.Failed)
@@ -97,11 +108,8 @@ public sealed class DocumentSession : IDisposable
                 throw new WorkerExitedException();
             }
 
-            client = _client;
-            documentId = _remote.Id;
+            return (_client, _remote.Id);
         }
-
-        return await client.RenderTileAsync(documentId, pageIndex, pixelsPerPoint, region, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Kills the current worker, as a crash would. For tests and the S1 benchmark.</summary>

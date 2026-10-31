@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Avalonia;
+using Avalonia.Automation.Peers;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -22,6 +23,11 @@ internal readonly record struct FrameStats(
 /// preview if that is cached, otherwise left blank (white). Requests are made for visible
 /// tiles first, then for tiles within one viewport above and below; requests for tiles that
 /// leave that range are cancelled.
+///
+/// For assistive technology (spike S2), the view hosts a <see cref="PageElement"/> for each
+/// visible page and for the page being read, holding one focusable <see cref="ReadingLine"/>
+/// per text line. Up and Down move the reading position line by line, PageUp and PageDown move
+/// by page, and the view scrolls to keep the focused line in sight.
 /// </summary>
 internal sealed class DocumentView : Control
 {
@@ -45,14 +51,27 @@ internal sealed class DocumentView : Control
     private long _frame;
     private bool _updateQueued;
 
+    private readonly Dictionary<int, IReadOnlyList<TextLine>> _textLines = [];
+    private readonly HashSet<int> _unreadableText = [];
+    private readonly HashSet<int> _textRequests = [];
+    private readonly Dictionary<int, PageElement> _pageElements = [];
+    private int? _readingPage;
+
     public DocumentView()
     {
         Focusable = true;
         ClipToBounds = true;
+
+        // Tab enters the document once and lands on the last reading position, instead of
+        // stepping through every line.
+        KeyboardNavigation.SetTabNavigation(this, KeyboardNavigationMode.Once);
     }
 
     /// <summary>Tile edge in device pixels.</summary>
     public int TileSize { get; init; } = 256;
+
+    /// <summary>Whether to build the accessible page and line elements. Off only for the S2 A/B benchmark.</summary>
+    public bool ReadingElementsEnabled { get; init; } = true;
 
     public double Zoom => _zoom;
 
@@ -89,6 +108,14 @@ internal sealed class DocumentView : Control
         CancelAll();
         _cache.Clear();
         _failed.Clear();
+        foreach (int page in _pageElements.Keys.ToArray())
+        {
+            RemovePageElement(page);
+        }
+
+        _textLines.Clear();
+        _unreadableText.Clear();
+        _readingPage = null;
         _session = session;
         _offset = default;
         if (session is not null)
@@ -219,24 +246,251 @@ internal sealed class DocumentView : Control
         e.Handled = true;
     }
 
+    // Keys reach here from the focused line or page too, because key events bubble.
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+        if (_session is null)
+        {
+            return;
+        }
+
         bool control = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+        int readingPage = CurrentReadingPosition()?.Page ?? CurrentPage;
         e.Handled = true;
         switch (e.Key)
         {
-            case Key.Down: ScrollBy(60); break;
-            case Key.Up: ScrollBy(-60); break;
-            case Key.PageDown or Key.Space: ScrollBy(Bounds.Height * 0.9); break;
-            case Key.PageUp: ScrollBy(-Bounds.Height * 0.9); break;
-            case Key.Home: ScrollTo(new Vector(_offset.X, 0)); break;
-            case Key.End: ScrollTo(new Vector(_offset.X, double.MaxValue)); break;
+            case Key.Down when !control: _ = MoveReadingAsync(+1); break;
+            case Key.Up when !control: _ = MoveReadingAsync(-1); break;
+            case Key.PageDown: _ = FocusPositionAsync(Math.Min(readingPage + 1, _session.PageSizes.Count - 1), 0); break;
+            case Key.PageUp: _ = FocusPositionAsync(Math.Max(readingPage - 1, 0), 0); break;
+            case Key.Home when control: _ = FocusPositionAsync(0, 0); break;
+            case Key.End when control: _ = FocusPositionAsync(_session.PageSizes.Count - 1, 0); break;
+            case Key.Space: ScrollBy(e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? -Bounds.Height * 0.9 : Bounds.Height * 0.9); break;
             case Key.OemPlus or Key.Add when control: SetZoom(_zoom * 1.25); break;
             case Key.OemMinus or Key.Subtract when control: SetZoom(_zoom * 0.8); break;
             case Key.D0 or Key.NumPad0 when control: SetZoom(1); break;
             default: e.Handled = false; break;
         }
+    }
+
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        foreach (PageElement element in _pageElements.Values)
+        {
+            element.Measure(Size.Infinity);
+        }
+
+        return default;
+    }
+
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        foreach (var (page, element) in _pageElements)
+        {
+            element.Scale = DipsPerPoint * _zoom;
+            element.Arrange(PageRect(page));
+        }
+
+        return finalSize;
+    }
+
+    protected override AutomationPeer OnCreateAutomationPeer() => new DocumentViewPeer(this);
+
+    /// <summary>The focused line or text-less page, as (page, line); line is -1 for a page element.</summary>
+    private (int Page, int Line)? CurrentReadingPosition() =>
+        TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() switch
+        {
+            ReadingLine line => (line.PageIndex, line.Index),
+            PageElement page => (page.PageIndex, -1),
+            _ => null,
+        };
+
+    /// <summary>Moves to the next or previous line, crossing into neighbouring pages.</summary>
+    private async Task MoveReadingAsync(int direction)
+    {
+        if (CurrentReadingPosition() is not (int page, int line))
+        {
+            // Not reading yet: start at the top of the page in view.
+            await FocusPositionAsync(CurrentPage, 0);
+            return;
+        }
+
+        IReadOnlyList<TextLine> lines = await GetTextLinesAsync(page) ?? [];
+        int next = line + direction;
+        if (lines.Count > 0 && next >= 0 && next < lines.Count)
+        {
+            await FocusPositionAsync(page, next);
+            return;
+        }
+
+        int target = page + direction;
+        if (_session is null || target < 0 || target >= _session.PageSizes.Count)
+        {
+            return;
+        }
+
+        IReadOnlyList<TextLine> targetLines = await GetTextLinesAsync(target) ?? [];
+        await FocusPositionAsync(target, direction > 0 ? 0 : targetLines.Count - 1);
+    }
+
+    /// <summary>Scrolls a line (or a whole text-less page) into view and gives it keyboard focus.</summary>
+    private async Task FocusPositionAsync(int page, int line)
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        _readingPage = page;
+        IReadOnlyList<TextLine> lines = await GetTextLinesAsync(page) ?? [];
+        TextLine? target = lines.Count == 0 ? null : lines[Math.Clamp(line, 0, lines.Count - 1)];
+        ScrollIntoView(page, target);
+        SyncPageElements();
+
+        if (_pageElements.TryGetValue(page, out PageElement? element))
+        {
+            Control focusTarget = target is null ? element : element.Lines[lines.ToList().IndexOf(target)];
+
+            // The element is laid out in the next layout pass; focus it after that so it has bounds.
+            Dispatcher.UIThread.Post(() => focusTarget.Focus(NavigationMethod.Directional), DispatcherPriority.Loaded);
+        }
+    }
+
+    private void ScrollIntoView(int page, TextLine? line)
+    {
+        double scale = DipsPerPoint * _zoom;
+        double top = _pageTops[page] + ((line?.Top ?? 0) * scale);
+        double bottom = _pageTops[page] + ((line?.Bottom ?? _session!.PageSizes[page].Height) * scale);
+        double margin = Math.Min(48, Bounds.Height / 4);
+        if (top < _offset.Y + margin || bottom > _offset.Y + Bounds.Height - margin)
+        {
+            ScrollTo(new Vector(_offset.X, top - (Bounds.Height / 3)));
+        }
+    }
+
+    /// <summary>Keeps page elements for the visible pages and the page being read, loading text as needed.</summary>
+    private void SyncPageElements()
+    {
+        if (_session is null || !ReadingElementsEnabled)
+        {
+            return;
+        }
+
+        var wanted = new HashSet<int>(VisiblePages());
+        if (_readingPage is int reading)
+        {
+            wanted.Add(reading);
+        }
+
+        bool changed = false;
+        foreach (int page in wanted)
+        {
+            if (_pageElements.ContainsKey(page))
+            {
+                continue;
+            }
+
+            if (_textLines.TryGetValue(page, out IReadOnlyList<TextLine>? lines))
+            {
+                var element = new PageElement(page, _session.PageSizes.Count, lines, _unreadableText.Contains(page));
+                _pageElements[page] = element;
+                VisualChildren.Add(element);
+                LogicalChildren.Add(element);
+                changed = true;
+            }
+            else if (_textRequests.Add(page))
+            {
+                _ = LoadTextLinesAsync(page);
+            }
+        }
+
+        foreach (var (page, element) in _pageElements.ToArray())
+        {
+            if (!wanted.Contains(page) && !element.IsKeyboardFocusWithin)
+            {
+                RemovePageElement(page);
+                changed = true;
+            }
+        }
+
+        // This runs after every tile arrives; invalidating layout when nothing changed caused
+        // hundreds of extra render passes per second (spike S2 A/B benchmark).
+        if (changed)
+        {
+            InvalidateMeasure();
+            InvalidateArrange();
+        }
+    }
+
+    private async Task LoadTextLinesAsync(int page)
+    {
+        try
+        {
+            await GetTextLinesAsync(page);
+        }
+        finally
+        {
+            _textRequests.Remove(page);
+        }
+
+        SyncPageElements();
+    }
+
+    private async Task<IReadOnlyList<TextLine>?> GetTextLinesAsync(int page)
+    {
+        if (_textLines.TryGetValue(page, out IReadOnlyList<TextLine>? cached))
+        {
+            return cached;
+        }
+
+        DocumentSession? session = _session;
+        if (session is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            IReadOnlyList<TextLine> lines = await session.GetTextLinesAsync(page);
+            if (session == _session)
+            {
+                _textLines[page] = lines;
+            }
+
+            return lines;
+        }
+        catch (WorkerException)
+        {
+            // Record the failure so the page says its text could not be read, rather than
+            // claiming it has none, and so it is not requested again.
+            if (session == _session)
+            {
+                _unreadableText.Add(page);
+                _textLines[page] = [];
+            }
+
+            return [];
+        }
+        catch (Exception ex) when (ex is WorkerExitedException or OperationCanceledException)
+        {
+            // Asked again after the session restarts the worker.
+            return null;
+        }
+    }
+
+    private void RemovePageElement(int page)
+    {
+        if (_pageElements.Remove(page, out PageElement? element))
+        {
+            VisualChildren.Remove(element);
+            LogicalChildren.Remove(element);
+        }
+    }
+
+    private sealed class DocumentViewPeer(DocumentView owner) : ControlAutomationPeer(owner)
+    {
+        protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Document;
     }
 
     private double RenderScaling => TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
@@ -323,6 +577,12 @@ internal sealed class DocumentView : Control
     private void InvalidateAndUpdate()
     {
         InvalidateVisual();
+        if (_pageElements.Count > 0)
+        {
+            // Page elements move with the scroll offset.
+            InvalidateArrange();
+        }
+
         StatusChanged?.Invoke();
         if (!_updateQueued)
         {
@@ -339,6 +599,8 @@ internal sealed class DocumentView : Control
         {
             return;
         }
+
+        SyncPageElements();
 
         double pixelsPerPoint = DipsPerPoint * _zoom * RenderScaling;
         long scaleKey = TileKey.ToScaleKey(pixelsPerPoint);

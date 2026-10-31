@@ -6,7 +6,7 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
 |---|---|---|
 | S0 Skeleton, CI, fixtures | Done | **Pass.** CI is green on Windows, macOS (arm64), and Linux (first at `2d40760`, again at `7da2c2a`). Fixtures are byte-identical across OSes except where PDFium renders text: see findings 8 and 15 |
 | S1 Tiled rendering | Windows done; Linux and macOS not measured | **Pass on Windows** against every target. The pipeline tests pass on all three OSes in CI (`7da2c2a`). Interactive measurements on Linux and macOS, and worker memory limits there, are still open |
-| S2 Document-text accessibility | Not started | — |
+| S2 Document-text accessibility | Built; verified on Windows through UI Automation | **Promising.** The tree and keyboard reading behave as designed, with one focus event per key, and there is no measurable frame-pacing cost (A/B benchmark). Real screen-reader checks (NVDA, Narrator) are pending with the maintainer; Orca and VoiceOver need Linux and a Mac |
 | S3 Printing | Not started | — |
 | S4 qpdf from .NET | Not started | — |
 | S5 Redaction method | Not started | — |
@@ -124,6 +124,7 @@ Machine: i5-1235U, 12 logical cores, Windows 11 x64, scaling 1.0, 1000 × 701 DI
 - **Drawing cost:** the UI thread spends under 0.2 ms per frame drawing (p95), so frame pacing is set by the compositor, not by the view.
 - **Visual check:** a window capture shows correct pages, text, and images, with no seams.
 - **Startup:** process start to window took 5.5 s on a cold first launch of a fresh Release build, against 2.9–3.5 s warm in S0. This is S6's problem: NativeAOT and ReadyToRun.
+- **Re-measured after S2 (finding 19):** six further runs with the GPU and 256 px tiles met every S1 target. The worst frame was 36 ms and p95 17.6–18.5 ms at all zoom levels.
 
 ### Findings
 9. **Tiles differ from a full-page render only where a glyph crosses a tile edge.**
@@ -147,7 +148,7 @@ Machine: i5-1235U, 12 logical cores, Windows 11 x64, scaling 1.0, 1000 × 701 DI
     - The exception was `canary-image.pdf`, the only fixture made by *rendering* text into pixels. Its hash differed on all three OSes.
     - The cause is not yet investigated. The likely explanation is that non-embedded standard fonts (Helvetica) are substituted or rasterised differently on each OS.
     - `manifest.json` differed on Windows only, because of .NET's OS-dependent JSON line ending.
-    - **Fixes:** the canary label is now drawn with a built-in 5×7 pixel font instead of PDFium rendering, and the manifest is written with `\n`. All fixtures should then match across OSes; the next CI run confirms it.
+    - **Fixes:** the canary label is now drawn with a built-in 5×7 pixel font instead of PDFium rendering, and the manifest is written with `\n`. **Confirmed by CI at `e0e27b0` (run 41167292876): every fixture and the manifest are byte-identical on Windows, macOS, and Linux.**
     - **Consequence for testing:** tests that compare rendered pixels need a baseline per OS (or tolerances). Tests that compare written PDFs can compare bytes across OSes.
     - **Consequence for the product:** the same document can look slightly different on each OS when its fonts are not embedded. This is normal for PDF viewers, but it should be documented, and it matters for the visual-regression corpus.
 
@@ -155,3 +156,91 @@ Machine: i5-1235U, 12 logical cores, Windows 11 x64, scaling 1.0, 1000 × 701 DI
 - **Linux (X11 and XWayland) and macOS:** the interactive benchmark and a visual check. CI runs the pipeline tests on all three OSes.
 - **Worker memory limits on Linux and macOS.**
 - **Display scaling above 1.0:** tile size in device pixels is implemented, but not yet measured.
+
+## S2 — Document-text accessibility (2026-10-31)
+
+### Approach
+Avalonia exposes no text pattern to assistive technology. Issue #22168 is still open with no comments. Upstream PR #22178, which only defines the shared text contract (+1,428 lines), is open with no reviews and labelled *api-needs-review*. The Windows TextPattern and AT-SPI text handlers would follow in later PRs, and nothing is listed for macOS.
+
+So S2 does not wait for that work. It uses the one channel every screen reader on every OS supports, **keyboard focus**:
+- **Engine:** `IPdfDocument.GetTextLines` returns each line's text and bounds. The worker serves it (`GetTextLines` request).
+- **View:** `DocumentView` is exposed as a *Document* named after the file. It hosts a *Group* per page ("Page N of M") for the visible pages and the page being read, and inside each group a focusable *Text* element per line, drawn with a highlight while focused.
+- **Pages without text:** the page group itself takes focus and is named "Page N of M, no text on this page", or "…, the text on this page could not be read" if extraction failed.
+- **Keys:**
+  - ↓/↑: next or previous line, across pages
+  - PageDown/PageUp: next or previous page
+  - Ctrl+Home/End: first or last page
+  - Space: scroll
+
+  The view scrolls to keep the focused line in sight. Tab enters the document once (`TabNavigation = Once`) and returns to the last reading position.
+
+### Evidence (Windows, UI Automation)
+`tools/spike/s2-uia-check.ps1` starts the app on `image-only-middle-page.pdf`, prints the UI Automation tree, presses keys, and logs the focused element and the UIA focus-changed events. Those events are what NVDA and Narrator announce.
+
+```
+Document: Document | image-only-middle-page.pdf
+  Group: Page 1 of 3  (6 text lines)
+      Text | Text page 1
+      Text | document update report index policy account archive record s...
+Down       -> Text | Text page 1                              (1 focus event)
+Down       -> Text | document update report index policy...   (1 focus event)
+Down       -> Text | section document update report index...  (1 focus event)
+PageDown   -> Group | Page 2 of 3, no text on this page        (1 focus event)
+Down       -> Text | Text page 2                              (1 focus event)
+Up         -> Group | Page 2 of 3, no text on this page        (1 focus event)
+Up         -> Text | analysis review table section...         (1 focus event)
+Ctrl+End   -> Text | Text page 2                              (1 focus event)
+Ctrl+Home  -> Text | Text page 1                              (1 focus event)
+```
+
+Against the S2 questions:
+
+| Question | Windows (UIA) | Real screen reader |
+|---|---|---|
+| (a) Can the user hear the page text? | ✅ Each line is a named Text element and takes focus | NVDA and Narrator pending (checklist below) |
+| (b) Can the user move line by line? | ✅ ↓/↑, one focus event per line, across page boundaries | Pending |
+| (c) Can the user move to the next page? | ✅ PageDown; a text-less page is announced as such | Pending |
+| (d) Can the user find their position after scrolling? | Focus stays on the reading line during mouse scrolling; the next ↓ continues from it and scrolls back to it. Each line sits in a group named "Page N of M" | Pending: does the reader announce the page group? |
+
+Orca (Linux) and VoiceOver (macOS) are untested. They need a Linux environment and a Mac.
+
+### Findings
+16. **PDFium returns text lines in content-stream order, not visual reading order.**
+    - In `canary-text.pdf`, the "CANARY-01" line is drawn above the filler but written after it, so it comes last. A test pins this behaviour.
+    - For untagged PDFs, what a screen-reader user hears therefore depends on how the file was produced.
+    - Sorting lines top-to-bottom would break multi-column pages, so the spike keeps the engine's order.
+    - **v1 needs a reading-order decision:** use the structure tree for tagged PDFs, and layout analysis or a column-aware heuristic for untagged ones. PdfPig (Apache-2.0) has layout analysis and is a candidate.
+17. **Keyboard focus is a viable route to document text without a text pattern.** It is cross-platform in principle, because it relies only on focus events. It has known limits, which the manual checks will size:
+    - no continuous "say all" (each line is its own focus stop)
+    - no character or word navigation through the document, beyond what a reader's review cursor offers on the focused line
+    - no keyboard text selection
+    - possible extra verbosity from announcing roles
+    - These are what a real text pattern would add later. They do not block S2's pass criteria.
+18. **Arrow keys now move a visible reading highlight instead of scrolling.** For sighted keyboard users the effect is similar (the view follows the line), and Space and the mouse wheel still scroll freely. Confirm this design in UI review.
+19. **An S2 change caused 100–250 ms stalls; found by A/B benchmark and fixed.**
+    - The first S2 build invalidated the view's layout on every scroll step and every tile arrival, even when there were no page elements to move.
+    - In a first A/B round (4 runs with the reading elements and 4 without), 5 of 8 runs had a stall over 100 ms, the worst at 254 ms, in both variants. The view also ran up to about 900 extra render passes per second.
+    - **Fix:** invalidate layout only when page elements are added or removed, or when existing ones need to move.
+    - A second round (3 + 3 runs, `docs/research/s2-benchmarks/`) had **no frame over 50 ms in any of 24 phase runs** (worst 36 ms) and **no extra render passes**.
+    - p95 was 17.6–18.5 ms in every phase, with or without the reading elements. **The reading elements have no measurable frame-pacing cost.** They add about 10 MB of allocation per 15 s scroll phase.
+    - Garbage collection runs 1–6 full collections per phase in both variants (likely bitmap memory pressure), with 3–37 ms of total pause and no stalls.
+20. **Avalonia's animation-frame callback also runs on render passes caused by invalidation**, not only once per display frame. The benchmark now counts callbacks under 2 ms apart as extra ticks rather than frames. Without that, the earlier statistics were diluted, for example a 0.14 ms median "frame" in one run.
+
+### Manual screen-reader checklist (Windows)
+Prerequisites: install NVDA (free, from nvaccess.org), and build the app (`dotnet build PdfSuite.slnx`). Then open the test document:
+
+```bash
+dotnet run --project src/PdfSuite.App -- fixtures/generated/image-only-middle-page.pdf
+```
+
+With NVDA running, then again with Narrator (Win + Ctrl + Enter):
+
+1. Press **Tab** once from **Open PDF…**. Expected: the document name is announced.
+2. Press **↓**. Expected: "Text page 1" is announced. This tests (a).
+3. Press **↓** twice. Expected: the next two lines are read. This tests (b).
+4. Press **PageDown**. Expected: "Page 2 of 3, no text on this page" is announced. This tests (c).
+5. Press **↓**. Expected: "Text page 2" is announced. Note whether "Page 3 of 3" is announced as you enter the page. This tests (d).
+6. Scroll away with the mouse wheel, then press **↓**. Expected: reading continues from the last line, and the view scrolls back to it. This tests (d).
+7. Note anything distracting: repeated role words ("text", "grouping"), lag, or anything not read.
+
+Pass: steps 2–5 work in both readers. Record what was heard for each step here.

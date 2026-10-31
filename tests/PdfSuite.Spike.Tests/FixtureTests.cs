@@ -45,6 +45,58 @@ public sealed class FixtureTests
     }
 
     [Fact]
+    public void TextLines_HaveBoundsWhereTheTextIs()
+    {
+        using var document = _engine.Open(Fixtures.CanaryText());
+
+        IReadOnlyList<TextLine> lines = document.GetTextLines(0);
+
+        Assert.Equal("Canary fixture: text", lines[0].Text);
+        TextLine canary = Assert.Single(lines, l => l.Text.Contains("CANARY-01"));
+
+        // "CANARY-01" is set at 12 pt from x = 180 with its baseline at y = 500 (bottom-left origin),
+        // which is 292 pt from the top.
+        Assert.InRange(canary.Right, 240, 260);
+        Assert.InRange(canary.Top, 280, 292);
+        Assert.InRange(canary.Bottom, 290, 298);
+    }
+
+    // Characterises PDFium, not a goal: lines come back in content-stream order. The canary line is
+    // drawn above the filler but written after it, so it comes last. Reading order for untagged PDFs
+    // needs the structure tree or layout analysis (spike results, finding 16).
+    [Fact]
+    public void TextLines_FollowContentOrderNotVisualOrder()
+    {
+        using var document = _engine.Open(Fixtures.CanaryText());
+
+        IReadOnlyList<TextLine> lines = document.GetTextLines(0);
+
+        Assert.Contains("CANARY-01", lines[^1].Text);
+        Assert.True(lines[^1].Top < lines[1].Top, "The last line returned is visually above the second.");
+    }
+
+    [Fact]
+    public void TextLines_AreEmptyForAnImageOnlyPage()
+    {
+        using var document = _engine.Open(Fixtures.ImageOnlyMiddlePage());
+
+        Assert.Equal(6, document.GetTextLines(0).Count);
+        Assert.Empty(document.GetTextLines(1));
+        Assert.Equal("Text page 2", document.GetTextLines(2)[0].Text);
+    }
+
+    [Fact]
+    public void TextLines_DoNotIncludeTextThatIsOnlyPixels()
+    {
+        using var document = _engine.Open(Fixtures.CanaryImage());
+
+        IReadOnlyList<TextLine> lines = document.GetTextLines(0);
+
+        Assert.Contains(lines, l => l.Text == "Canary fixture: image");
+        Assert.DoesNotContain(lines, l => l.Text.Contains("CANARY"));
+    }
+
+    [Fact]
     public void CanaryImage_IsPixelsOnly()
     {
         using var document = (PdfiumDocument)_engine.Open(Fixtures.CanaryImage());

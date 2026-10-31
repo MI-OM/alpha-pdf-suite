@@ -231,6 +231,35 @@ public sealed class WorkerClient : IDisposable
         }
     }
 
+    public async Task<IReadOnlyList<TextLine>> GetTextLinesAsync(int documentId, int pageIndex, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        int id = NextRequestId();
+        Pending pending = Register(id);
+        SendPageRequest(MessageKind.GetTextLines, id, documentId, pageIndex);
+
+        Message response;
+        using (cancellationToken.Register(() => CancelRequest(id)))
+        {
+            response = await pending.Completion.Task.ConfigureAwait(false);
+        }
+
+        using var owned = response;
+        ThrowIfError(response);
+        Expect(response, MessageKind.TextLines);
+
+        var reader = new PayloadReader(response.Payload);
+        var lines = new TextLine[reader.ReadInt32()];
+        for (int i = 0; i < lines.Length; i++)
+        {
+            double left = reader.ReadDouble(), top = reader.ReadDouble(), right = reader.ReadDouble(), bottom = reader.ReadDouble();
+            string text = Encoding.UTF8.GetString(reader.ReadBytes(reader.ReadInt32()));
+            lines[i] = new TextLine(text, left, top, right, bottom);
+        }
+
+        return lines;
+    }
+
     public async Task CloseDocumentAsync(int documentId)
     {
         int id = NextRequestId();
@@ -316,6 +345,15 @@ public sealed class WorkerClient : IDisposable
         writer.WriteInt32(region.Width);
         writer.WriteInt32(region.Height);
         Send(MessageKind.RenderTile, id, writer.Written);
+    }
+
+    private void SendPageRequest(MessageKind kind, int id, int documentId, int pageIndex)
+    {
+        Span<byte> payload = stackalloc byte[8];
+        var writer = new PayloadWriter(payload);
+        writer.WriteInt32(documentId);
+        writer.WriteInt32(pageIndex);
+        Send(kind, id, writer.Written);
     }
 
     private void CancelRequest(int id)

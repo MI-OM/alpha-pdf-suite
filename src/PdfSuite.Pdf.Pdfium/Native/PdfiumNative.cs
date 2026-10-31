@@ -167,6 +167,12 @@ internal static unsafe partial class PdfiumNative
     [LibraryImport(Library)]
     internal static partial int FPDFText_GetText(nint textPage, int startIndex, int count, char* result);
 
+    [LibraryImport(Library)]
+    internal static partial int FPDFText_CountRects(nint textPage, int startIndex, int count);
+
+    [LibraryImport(Library)]
+    internal static partial int FPDFText_GetRect(nint textPage, int rectIndex, double* left, double* top, double* right, double* bottom);
+
     // fpdf_annot.h
     [LibraryImport(Library)]
     internal static partial nint FPDFPage_CreateAnnot(nint page, int subtype);

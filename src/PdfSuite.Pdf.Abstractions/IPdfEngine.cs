@@ -22,6 +22,13 @@ public interface IPdfDocument : IDisposable
     string GetPageText(int pageIndex);
 
     /// <summary>
+    /// Returns the page's text as lines with each line's bounds, in the order the engine extracts
+    /// them. For PDFium that is content-stream order, which is not always visual reading order.
+    /// Empty for a page with no text, such as a scan without OCR.
+    /// </summary>
+    IReadOnlyList<TextLine> GetTextLines(int pageIndex);
+
+    /// <summary>
     /// Renders one region of a page, with annotations, as opaque 32-bit BGRA pixels
     /// (stride = width * 4). The page is scaled to <see cref="PageSize.ToPixels"/> at
     /// <paramref name="pixelsPerPoint"/>; the region is measured in those pixels from
@@ -43,3 +50,6 @@ public readonly record struct PageSize(double Width, double Height)
 
 /// <summary>A rectangle in pixels of a scaled page, origin at its top-left corner.</summary>
 public readonly record struct PixelRegion(int Left, int Top, int Width, int Height);
+
+/// <summary>One line of page text and its bounds in points, measured from the page's top-left corner.</summary>
+public sealed record TextLine(string Text, double Left, double Top, double Right, double Bottom);

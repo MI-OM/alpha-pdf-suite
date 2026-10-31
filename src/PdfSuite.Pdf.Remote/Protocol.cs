@@ -15,12 +15,14 @@ public enum MessageKind : byte
     RenderTile = 2,
     Cancel = 3,
     Close = 4,
+    GetTextLines = 5,
     AllocateForTest = 90,
 
     // Responses
     Opened = 101,
     Tile = 102,
     Ack = 103,
+    TextLines = 105,
     Error = 199,
 }
 

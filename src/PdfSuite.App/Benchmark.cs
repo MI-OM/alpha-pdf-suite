@@ -76,6 +76,7 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
                 viewportDips = new { width = _view.Bounds.Width, height = _view.Bounds.Height },
                 rendering = options.Software ? "software" : "default (GPU where available)",
                 tileSize = _view.TileSize,
+                readingElements = _view.ReadingElementsEnabled,
                 build = typeof(Benchmark).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyConfigurationAttribute), false)
                     .OfType<System.Reflection.AssemblyConfigurationAttribute>().FirstOrDefault()?.Configuration,
             },
@@ -115,7 +116,11 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
 
         var intervals = new List<double>();
         var renderMs = new List<double>();
-        int frames = 0, framesWithBlank = 0, framesWithPreviewOnly = 0;
+        var stalls = new List<object>();
+        int gen0 = GC.CollectionCount(0), gen1 = GC.CollectionCount(1), gen2 = GC.CollectionCount(2);
+        long allocated = GC.GetTotalAllocatedBytes();
+        TimeSpan gcPause = GC.GetTotalPauseDuration();
+        int frames = 0, framesWithBlank = 0, framesWithPreviewOnly = 0, extraTicks = 0;
         double elapsed = 0;
         double? killedAt = null, recoveredAt = null;
         int tilesBeforeKill = 0;
@@ -128,7 +133,30 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
             if (last is TimeSpan previous)
             {
                 double dt = (now - previous).TotalMilliseconds;
-                intervals.Add(dt);
+
+                // Avalonia also runs animation-frame callbacks on render passes caused by
+                // invalidation, not only once per display frame. Callbacks under 2 ms apart are
+                // counted as extra ticks, not frames, so they do not dilute the frame statistics.
+                if (dt < 2)
+                {
+                    extraTicks++;
+                }
+                else
+                {
+                    intervals.Add(dt);
+                    if (dt > 50)
+                    {
+                        // When stalls happen, and whether a GC ran, separates warm-up from steady state.
+                        stalls.Add(new
+                        {
+                            atSeconds = Math.Round(elapsed, 2),
+                            ms = Math.Round(dt, 1),
+                            gcCountSoFar = GC.CollectionCount(0) - gen0,
+                            gcPauseMsSoFar = Math.Round((GC.GetTotalPauseDuration() - gcPause).TotalMilliseconds, 1),
+                        });
+                    }
+                }
+
                 elapsed += dt / 1000;
                 _view.ScrollBy(ScrollSpeed * dt / 1000);
             }
@@ -179,7 +207,17 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
             zoomAndJumpToSharpMs = Math.Round(settleMs),
             seconds = Math.Round(elapsed, 1),
             frames,
+            extraTicks,
             frameIntervalMs = Percentiles(intervals),
+            stallsOver50Ms = stalls,
+            gc = new
+            {
+                gen0 = GC.CollectionCount(0) - gen0,
+                gen1 = GC.CollectionCount(1) - gen1,
+                gen2 = GC.CollectionCount(2) - gen2,
+                pauseMs = Math.Round((GC.GetTotalPauseDuration() - gcPause).TotalMilliseconds, 1),
+                allocatedMb = Math.Round((GC.GetTotalAllocatedBytes() - allocated) / (1024.0 * 1024.0), 1),
+            },
             framesOver33Ms = intervals.Count(i => i > 33.4),
             uiThreadDrawMs = Percentiles(renderMs),
             framesWithBlankTilesPercent = Percent(framesWithBlank, frames),

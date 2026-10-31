@@ -31,6 +31,19 @@ public sealed class WorkerPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task GetTextLines_ReturnsTheSameLinesAsTheEngine()
+    {
+        byte[] data = Fixtures.CanaryText();
+        RemoteDocument document = await _client.OpenAsync(data, password: null, Ct);
+
+        IReadOnlyList<TextLine> remote = await _client.GetTextLinesAsync(document.Id, 0, Ct);
+
+        using IPdfDocument local = new PdfSuite.Pdf.Pdfium.PdfiumEngine().Open(data);
+        Assert.Equal(local.GetTextLines(0), remote);
+        Assert.Contains(remote, l => l.Text.Contains("CANARY-01"));
+    }
+
+    [Fact]
     public async Task RenderTile_DrawsTextOnlyWhereThePageHasIt()
     {
         RemoteDocument document = await _client.OpenAsync(Fixtures.CanaryText(), password: null, Ct);
