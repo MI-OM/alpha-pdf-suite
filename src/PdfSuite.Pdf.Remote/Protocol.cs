@@ -16,6 +16,7 @@ public enum MessageKind : byte
     Cancel = 3,
     Close = 4,
     GetTextLines = 5,
+    Print = 6,
     AllocateForTest = 90,
 
     // Responses
@@ -23,6 +24,7 @@ public enum MessageKind : byte
     Tile = 102,
     Ack = 103,
     TextLines = 105,
+    Printed = 106,
     Error = 199,
 }
 
@@ -34,6 +36,8 @@ public enum WorkerErrorCode
     PageOutOfRange = 3,
     OpenFailed = 4,
     OutOfMemory = 5,
+    PrintFailed = 6,
+    NotSupported = 7,
 }
 
 /// <summary>A received frame. The payload is rented from the shared pool; dispose to return it.</summary>
@@ -157,6 +161,13 @@ public ref struct PayloadReader(ReadOnlySpan<byte> payload)
         return value;
     }
 
+    /// <summary>Reads an [int32 length][UTF-8] string; a length of -1 means null.</summary>
+    public string? ReadString()
+    {
+        int length = ReadInt32();
+        return length < 0 ? null : System.Text.Encoding.UTF8.GetString(ReadBytes(length));
+    }
+
     public readonly ReadOnlySpan<byte> Remaining => _rest;
 }
 
@@ -189,6 +200,23 @@ public ref struct PayloadWriter(Span<byte> buffer)
         value.CopyTo(_buffer[_position..]);
         _position += value.Length;
     }
+
+    /// <summary>Writes an [int32 length][UTF-8] string; null is written as length -1.</summary>
+    public void WriteString(string? value)
+    {
+        if (value is null)
+        {
+            WriteInt32(-1);
+            return;
+        }
+
+        int length = System.Text.Encoding.UTF8.GetBytes(value, _buffer[(_position + 4)..]);
+        WriteInt32(length);
+        _position += length;
+    }
+
+    /// <summary>Bytes needed to write <paramref name="value"/> with <see cref="WriteString"/>.</summary>
+    public static int SizeOf(string? value) => 4 + (value is null ? 0 : System.Text.Encoding.UTF8.GetByteCount(value));
 
     public readonly Span<byte> Written => _buffer[.._position];
 }

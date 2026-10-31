@@ -25,6 +25,13 @@ public sealed record WorkerOptions(string WorkerPath)
 
 public sealed record RemoteDocument(int Id, IReadOnlyList<PageSize> PageSizes);
 
+/// <summary>
+/// A print job (Windows only in the spike). <paramref name="DevMode"/> holds the printer settings
+/// from the Print dialog, or is empty for the printer's defaults. <paramref name="OutputFile"/>
+/// is for print-to-file drivers such as Microsoft Print to PDF.
+/// </summary>
+public sealed record PrintJob(string PrinterName, byte[] DevMode, IReadOnlyList<int> Pages, string Title, string? OutputFile = null);
+
 public sealed record WorkerExit(int? ExitCode);
 
 public class WorkerException(WorkerErrorCode code, string message) : Exception(message)
@@ -260,6 +267,47 @@ public sealed class WorkerClient : IDisposable
         return lines;
     }
 
+    /// <summary>
+    /// Prints pages through the worker. Returns the number of pages sent to the printer, or 0 if
+    /// the user cancelled when the job started (for example in a print-to-file Save dialog).
+    /// </summary>
+    public async Task<int> PrintAsync(int documentId, PrintJob job, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        int id = NextRequestId();
+
+        // Printing takes much longer than one tile, so the hang watchdog gets a matching allowance.
+        Pending pending = Register(id, TimeSpan.FromSeconds(30 + (10 * job.Pages.Count)));
+
+        byte[] payload = new byte[8 + (4 * job.Pages.Count) + PayloadWriter.SizeOf(job.PrinterName)
+            + PayloadWriter.SizeOf(job.Title) + PayloadWriter.SizeOf(job.OutputFile) + 4 + job.DevMode.Length];
+        var writer = new PayloadWriter(payload);
+        writer.WriteInt32(documentId);
+        writer.WriteInt32(job.Pages.Count);
+        foreach (int page in job.Pages)
+        {
+            writer.WriteInt32(page);
+        }
+
+        writer.WriteString(job.PrinterName);
+        writer.WriteString(job.Title);
+        writer.WriteString(job.OutputFile);
+        writer.WriteInt32(job.DevMode.Length);
+        writer.WriteBytes(job.DevMode);
+        Send(MessageKind.Print, id, payload);
+
+        Message response;
+        using (cancellationToken.Register(() => CancelRequest(id)))
+        {
+            response = await pending.Completion.Task.ConfigureAwait(false);
+        }
+
+        using var owned = response;
+        ThrowIfError(response);
+        Expect(response, MessageKind.Printed);
+        return new PayloadReader(response.Payload).ReadInt32();
+    }
+
     public async Task CloseDocumentAsync(int documentId)
     {
         int id = NextRequestId();
@@ -449,8 +497,12 @@ public sealed class WorkerClient : IDisposable
                 exitCode = _process.ExitCode;
             }
         }
-        catch (InvalidOperationException)
+        catch (Exception ex)
         {
+            // This runs on the reader thread, where an escaping exception would crash the app.
+            // Reading the exit code can race with Dispose (seen as UnauthorizedAccessException);
+            // the exit code is only diagnostic, so report it as unknown.
+            _options.Log?.Invoke($"Could not read the worker's exit code: {ex.GetType().Name}");
         }
 
         Exited?.Invoke(this, new WorkerExit(exitCode));
@@ -461,9 +513,10 @@ public sealed class WorkerClient : IDisposable
         long now = Stopwatch.GetTimestamp();
         foreach (Pending pending in _pending.Values)
         {
-            if (Stopwatch.GetElapsedTime(pending.StartedAt, now) > _options.RequestTimeout)
+            TimeSpan timeout = pending.Timeout ?? _options.RequestTimeout;
+            if (Stopwatch.GetElapsedTime(pending.StartedAt, now) > timeout)
             {
-                _options.Log?.Invoke($"A request took longer than {_options.RequestTimeout.TotalSeconds:0} s; stopping the worker.");
+                _options.Log?.Invoke($"A request took longer than {timeout.TotalSeconds:0} s; stopping the worker.");
                 Kill();
                 return;
             }
@@ -472,9 +525,9 @@ public sealed class WorkerClient : IDisposable
 
     private int NextRequestId() => Interlocked.Increment(ref _nextRequestId);
 
-    private Pending Register(int id)
+    private Pending Register(int id, TimeSpan? timeout = null)
     {
-        var pending = new Pending(Stopwatch.GetTimestamp());
+        var pending = new Pending(Stopwatch.GetTimestamp(), timeout);
         _pending[id] = pending;
         return pending;
     }
@@ -514,9 +567,12 @@ public sealed class WorkerClient : IDisposable
         }
     }
 
-    private sealed class Pending(long startedAt)
+    private sealed class Pending(long startedAt, TimeSpan? timeout)
     {
         public long StartedAt { get; } = startedAt;
+
+        /// <summary>Overrides the default hang timeout for slow requests such as printing.</summary>
+        public TimeSpan? Timeout { get; } = timeout;
 
         public TaskCompletionSource<Message> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);

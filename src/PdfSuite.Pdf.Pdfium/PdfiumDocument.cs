@@ -209,6 +209,21 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
         }
     }
 
+    /// <summary>
+    /// Draws a page onto a Windows device context, such as a printer's, as GDI drawing commands.
+    /// The rectangle is in device units; rotate is in quarter turns clockwise.
+    /// </summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public void RenderToDeviceContext(nint deviceContext, int pageIndex, int x, int y, int width, int height, int rotate)
+    {
+        lock (PdfiumLibrary.Sync)
+        {
+            nint page = GetLoadedPage(pageIndex);
+            PdfiumNative.FPDF_RenderPage(
+                deviceContext, page, x, y, width, height, rotate, PdfiumNative.FPDF_ANNOT | PdfiumNative.FPDF_PRINTING);
+        }
+    }
+
     /// <summary>Counts the top-level page objects of one kind. Used by fixture tests.</summary>
     public int CountObjects(int pageIndex, PdfiumObjectKind kind)
     {

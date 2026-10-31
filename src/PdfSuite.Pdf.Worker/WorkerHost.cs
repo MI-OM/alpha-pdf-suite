@@ -100,6 +100,9 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
                 case MessageKind.GetTextLines:
                     GetTextLines(request);
                     break;
+                case MessageKind.Print:
+                    Print(request);
+                    break;
                 case MessageKind.AllocateForTest when allowTestCommands:
                     AllocateForTest(request);
                     break;
@@ -124,10 +127,22 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
         {
             SendError(request.RequestId, WorkerErrorCode.OutOfMemory, 0, "The worker ran out of memory.");
         }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            SendError(request.RequestId, WorkerErrorCode.PrintFailed, ex.NativeErrorCode, ex.Message);
+        }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
             // Messages here come from this codebase and never include document content.
             SendError(request.RequestId, WorkerErrorCode.Unknown, 0, $"{ex.GetType().Name}: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            // One bad request must not take the worker down, for example a native function missing
+            // from a PDFium build (EntryPointNotFoundException). Report the type only: the message
+            // could quote document content.
+            Console.Error.WriteLine($"Unexpected {ex.GetType().FullName} handling {request.Kind}.");
+            SendError(request.RequestId, WorkerErrorCode.Unknown, 0, $"Unexpected {ex.GetType().Name}.");
         }
     }
 
@@ -213,6 +228,37 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
         }
 
         MessageIO.Write(output, MessageKind.TextLines, request.RequestId, payload);
+    }
+
+    // Payload: [docId][int32 n][n x int32 page][printer][title][output][int32 length][DEVMODE bytes]; strings via WriteString.
+    private void Print(in Message request)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            SendError(request.RequestId, WorkerErrorCode.NotSupported, 0, "Printing is implemented on Windows only in the spike.");
+            return;
+        }
+
+        var reader = new PayloadReader(request.Payload);
+        var document = (PdfiumDocument)_documents[reader.ReadInt32()];
+        var pages = new int[reader.ReadInt32()];
+        for (int i = 0; i < pages.Length; i++)
+        {
+            pages[i] = reader.ReadInt32();
+            ArgumentOutOfRangeException.ThrowIfNegative(pages[i]);
+            ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(pages[i], document.PageCount);
+        }
+
+        string printer = reader.ReadString() ?? throw new ArgumentException("No printer named.");
+        string title = reader.ReadString() ?? "Document";
+        string? outputFile = reader.ReadString();
+        ReadOnlySpan<byte> devMode = reader.ReadBytes(reader.ReadInt32());
+
+        int printed = GdiPrinter.Print(document, printer, devMode, pages, title, outputFile);
+
+        Span<byte> payload = stackalloc byte[4];
+        new PayloadWriter(payload).WriteInt32(printed);
+        MessageIO.Write(output, MessageKind.Printed, request.RequestId, payload);
     }
 
     private void Close(in Message request)

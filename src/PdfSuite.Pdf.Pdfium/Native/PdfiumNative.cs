@@ -21,8 +21,9 @@ internal static unsafe partial class PdfiumNative
     internal const uint FPDF_INCREMENTAL = 1;
     internal const uint FPDF_NO_INCREMENTAL = 2;
 
-    // FPDF_RenderPageBitmap flags.
+    // FPDF_RenderPageBitmap / FPDF_RenderPage flags.
     internal const int FPDF_ANNOT = 0x01;
+    internal const int FPDF_PRINTING = 0x800;
 
     internal const int FPDF_ANNOT_TEXT = 1;
     internal const int FPDF_FILLMODE_ALTERNATE = 1;
@@ -51,6 +52,13 @@ internal static unsafe partial class PdfiumNative
 
     [LibraryImport(Library)]
     internal static partial void FPDF_ClosePage(nint page);
+
+    // Windows builds only: draws onto a GDI device context such as a printer's. Text is drawn as
+    // glyph outlines: FPDF_SetPrintTextWithGDI, which sends GDI text instead, is not exported by these
+    // builds because it needs PDFIUM_PRINT_TEXT_WITH_GDI at build time (spike results, S3).
+    [LibraryImport(Library)]
+    internal static partial void FPDF_RenderPage(
+        nint deviceContext, nint page, int startX, int startY, int sizeX, int sizeY, int rotate, int flags);
 
     [LibraryImport(Library)]
     internal static partial void FPDF_RenderPageBitmap(

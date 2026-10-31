@@ -31,11 +31,16 @@ internal sealed class MainWindow : Window
 
         var open = new Button { Content = "Open PDF…" };
         open.Click += async (_, _) => await PickAndOpenAsync();
+        var print = new Button { Content = "Print…", Margin = new Thickness(8, 0, 0, 0) };
+        ToolTip.SetTip(print, "Print this document");
+        print.Click += async (_, _) => await PrintAsync();
         _status = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0) };
 
         var bar = new DockPanel { Margin = new Thickness(8) };
         DockPanel.SetDock(open, Dock.Left);
+        DockPanel.SetDock(print, Dock.Left);
         bar.Children.Add(open);
+        bar.Children.Add(print);
         bar.Children.Add(_status);
 
         var root = new DockPanel();
@@ -153,6 +158,60 @@ internal sealed class MainWindow : Window
         }
 
         return false;
+    }
+
+    protected override void OnKeyDown(Avalonia.Input.KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (!e.Handled && e.Key == Avalonia.Input.Key.P && e.KeyModifiers == Avalonia.Input.KeyModifiers.Control)
+        {
+            e.Handled = true;
+            _ = PrintAsync();
+        }
+    }
+
+    // Spike S3: Windows prints through the worker. macOS and Linux are not built yet; the
+    // planned route is in docs/research/spike-results.md (S3).
+    private async Task PrintAsync()
+    {
+        if (_view.Session is not DocumentSession session)
+        {
+            ShowMessage("Open a PDF to print it.");
+            return;
+        }
+
+        if (!OperatingSystem.IsWindows())
+        {
+            ShowMessage("Printing is not available on this operating system in this spike build.");
+            return;
+        }
+
+        PrintJob? job;
+        try
+        {
+            job = WindowsPrintDialog.Show(TryGetPlatformHandle()?.Handle ?? 0, session.PageSizes.Count, _view.CurrentPage, _documentName);
+        }
+        catch (Win32Exception)
+        {
+            ShowMessage("The Print dialog could not be shown.");
+            return;
+        }
+
+        if (job is null)
+        {
+            return;
+        }
+
+        ShowMessage($"Printing {job.Pages.Count} page(s) to {job.PrinterName}…");
+        try
+        {
+            int printed = await session.PrintAsync(job);
+            ShowMessage(printed == 0 ? "Printing was cancelled." : $"Sent {printed} page(s) to {job.PrinterName}.");
+        }
+        catch (Exception ex) when (ex is WorkerException or WorkerExitedException)
+        {
+            ShowMessage("We couldn't print the document. Check the printer, then try again.");
+        }
     }
 
     private static WorkerClient StartWorker() =>

@@ -7,7 +7,7 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
 | S0 Skeleton, CI, fixtures | Done | **Pass.** CI is green on Windows, macOS (arm64), and Linux (first at `2d40760`, again at `7da2c2a`). Fixtures are byte-identical across OSes except where PDFium renders text: see findings 8 and 15 |
 | S1 Tiled rendering | Windows done; Linux and macOS not measured | **Pass on Windows** against every target. The pipeline tests pass on all three OSes in CI (`7da2c2a`). Interactive measurements on Linux and macOS, and worker memory limits there, are still open |
 | S2 Document-text accessibility | Built; verified on Windows through UI Automation | **Promising.** The tree and keyboard reading behave as designed, with one focus event per key, and there is no measurable frame-pacing cost (A/B benchmark). Real screen-reader checks (NVDA, Narrator) are pending with the maintainer; Orca and VoiceOver need Linux and a Mac |
-| S3 Printing | Not started | — |
+| S3 Printing | Windows done; macOS and Linux planned and estimated | **Pass on Windows.** The worker prints with exact page geometry and vector output, but slowly: about 1 s and 256 KB per page with Print to PDF. macOS and Linux have a researched plan and estimates, not yet a proof of concept |
 | S4 qpdf from .NET | Not started | — |
 | S5 Redaction method | Not started | — |
 | S6 Packaging | Workflow scaffolded | Not started. A local win-x64 self-contained publish works: 211 MB, of which about 100 MB is SkiaSharp and HarfBuzz native `.pdb` symbols. The published worker self-test passes |
@@ -244,3 +244,63 @@ With NVDA running, then again with Narrator (Win + Ctrl + Enter):
 7. Note anything distracting: repeated role words ("text", "grouping"), lag, or anything not read.
 
 Pass: steps 2–5 work in both readers. Record what was heard for each step here.
+
+## S3 — Printing (2026-10-31)
+
+### Built (Windows)
+- **Where the document is parsed:** only in the worker, as PRD §8 requires.
+  - The app shows the Print dialog (`PrintDlgW`) and passes the chosen printer name, its DEVMODE settings (which carry copies and collation), and the page range to the worker.
+  - The worker opens the printer (`CreateDC`) and draws each page with PDFium's Windows-only `FPDF_RenderPage`, so pages go out as GDI drawing commands, not bitmaps.
+- **Placement:**
+  - each page centred on the paper at actual size
+  - shrunk only if larger than the printable area
+  - turned a quarter if its orientation differs from the paper's
+- **App:** a **Print…** button and Ctrl+P. Messages: "Sent N page(s) to <printer>.", "Printing was cancelled.", and "We couldn't print the document. Check the printer, then try again."
+- **Code size:** about 300 lines of Windows interop (`GdiPrinter`, `WindowsPrintDialog`) plus about 70 lines of protocol and client code.
+  - It took about half a day, including measurement and the dialog investigation.
+  - The hang watchdog allows 30 s plus 10 s per page for a print request.
+
+### Evidence
+- **Worker test** (`Print_ToMicrosoftPrintToPdf_ProducesEveryPageAtTheRightSize`) prints `simple-text.pdf` to Microsoft Print to PDF with an output file. It checks three pages, 612 × 792 pt, ink where the heading is, and a blank margin. It is skipped where that printer is not installed.
+- **Dialog check** (`tools/spike/s3-print-dialog-check.ps1`, passed):
+  1. Ctrl+P opens the dialog.
+  2. The script confirms "Microsoft Print to PDF" is selected (it never presses Print otherwise).
+  3. Print starts a job: the driver's Save dialog appears.
+  4. Cancelling the Save dialog makes the app report "Printing was cancelled."
+- **Fidelity and cost:** measured by printing to Microsoft Print to PDF and comparing with the original, rendering page 1 at 2 px/pt.
+
+| | simple-text (3 pages) | large-mixed (first 50 pages) |
+|---|---|---|
+| Time until the file was complete | 4.1 s | 48.1 s (about 1 s per page) |
+| Output size | 683 KB (original: 3.5 KB) | 12.8 MB |
+| Page 1 size | 612 × 792 pt, unchanged | unchanged |
+| Page 1 content | 41 text objects → 2,259 vector paths, 0 images | 46 text → 2,541 paths; the image stays an image |
+| Pixels differing by more than 25% luminance | 2.0% | 1.3% |
+
+A side-by-side crop showed the printed text matching the original in position and shape, marginally heavier.
+
+### Findings
+21. **Windows printing works, but text is printed as glyph outlines.** Quality is vector and geometry is exact. The cost is about 1 s and about 256 KB of spool data per page with Microsoft Print to PDF, and print-to-PDF output has no extractable text.
+    - PDFium can send real GDI text instead (`FPDF_SetPrintTextWithGDI`, as Chrome does), but **the prebuilt binaries do not export it**: it needs the `PDFIUM_PRINT_TEXT_WITH_GDI` build flag, checked against the DLL's export table.
+    - So faster, smaller printing would need **our own PDFium build**. Flathub already requires building PDFium from source, so the two decisions should be made together.
+    - Not yet measured on a physical printer. Printing real pages is your choice to make, not the spike's.
+22. **On Windows 11 the classic `PrintDlgW` call shows the modern "Windows Print" dialog**, which is hosted by a system process. It says "This app doesn't support print preview".
+    - Preview in that dialog needs the WinRT printing APIs (`Windows.Graphics.Printing`). This is a v1 UX decision.
+    - The driver's Save dialog is parented to the app's window.
+23. **Two robustness bugs found and fixed while building S3:**
+    - The client's reader thread could crash the whole app if reading a dead worker's exit code threw (seen as `UnauthorizedAccessException` when it raced with disposal). That would have defeated S1's crash isolation; it is now caught.
+    - The worker died on an exception type its request handler did not list (`EntryPointNotFoundException` for a missing PDFium export). Any unexpected exception now becomes an error response that names only its type, and the worker keeps serving.
+24. **Cancelling a print-to-file Save dialog is a cancellation, not an error.** `StartDoc` fails with `ERROR_CANCELLED`; the worker returns 0 pages and the app says "Printing was cancelled."
+25. **Printing needs the worker to reach the print spooler.** Any future OS sandbox for the worker must allow that, or printing moves to a small separate broker process. Record this in the process-isolation ADR.
+
+### macOS and Linux: plan and estimates (researched, not built)
+Same rule: the app never parses the document. Both OSes use CUPS, so one approach can cover both: **hand the original PDF to the OS print system**, which renders it in its own sandboxed filter processes.
+
+| | Recommended route | Dialog | Estimate | Main risks |
+|---|---|---|---|---|
+| **Linux** | xdg-desktop-portal **Print** (`PreparePrint` shows the native dialog; `Print` takes a file descriptor of the PDF), over D-Bus with Tmds.DBus, which Avalonia already brings in. Works inside Flatpak too | The portal's (GTK or KDE) | 2–3 days | The portal is missing on minimal desktops (fall back to CUPS `lp`); CUPS filters render with Poppler or Ghostscript, so output can differ from PDFium |
+| **macOS** | libcups (`cupsGetDests` and `cupsPrintFile`) with a small Avalonia print dialog. Later, `NSPrintPanel` through Objective-C interop for the native look | Own dialog first; native later (+3 days) | 2 days, or 5 with the native panel | Quartz renders the PDF, so output can differ from PDFium; Objective-C interop without a binding library is laborious |
+
+**Fallback where none of this works:** render pages in the worker at printer resolution and send raster images to CUPS. This matches PDFium exactly, but jobs are large.
+
+**Confidence: low to medium.** These are estimates from documentation, not measurements. Each route needs a 1-day proof of concept on a real machine (spike plan §9: Linux environment and Mac access).

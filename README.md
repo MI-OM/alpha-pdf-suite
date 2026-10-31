@@ -36,7 +36,7 @@ dotnet run --project src/PdfSuite.App
 
 The fixture generator writes synthetic test PDFs and `manifest.json` to `fixtures/generated/`, which is not committed. Output is byte-for-byte reproducible on one OS; PDFium's output differs between OSes (spike results, finding 8).
 
-The app opens a PDF given on the command line or through **Open PDF…**. Scroll with the wheel or Space, and zoom with Ctrl + wheel or Ctrl + plus/minus. ↓/↑ move a reading highlight line by line, PageDown/PageUp move by page, and Ctrl+Home/End jump to the first or last page. Screen readers announce each line (spike S2). Every document is parsed in a separate worker process. To rerun the S1 measurements (the window must stay visible):
+The app opens a PDF given on the command line or through **Open PDF…**. Scroll with the wheel or Space, and zoom with Ctrl + wheel or Ctrl + plus/minus. ↓/↑ move a reading highlight line by line, PageDown/PageUp move by page, and Ctrl+Home/End jump to the first or last page. Screen readers announce each line (spike S2). **Print…** or Ctrl+P prints through the worker; this is Windows-only in the spike (S3). Every document is parsed in a separate worker process. To rerun the S1 measurements (the window must stay visible):
 
 ```bash
 dotnet run --project src/PdfSuite.App -c Release -- fixtures/generated/large-2000-pages.pdf --benchmark --kill-worker

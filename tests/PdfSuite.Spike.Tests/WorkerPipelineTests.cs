@@ -210,6 +210,39 @@ public sealed class WorkerPipelineTests : IDisposable
         Assert.False(limited.HasExited);
     }
 
+    // Spike S3. Prints through the worker to Microsoft Print to PDF with an output file, so no
+    // dialog appears, then checks the printed PDF. Text arrives as glyph outlines (PDFium cannot
+    // print GDI text in these builds), so the check is pages, size, and ink where the text is.
+    // Skips where that printer is not installed.
+    [Fact]
+    public async Task Print_ToMicrosoftPrintToPdf_ProducesEveryPageAtTheRightSize()
+    {
+        Assert.SkipUnless(PrintToPdfInstalled(), "Needs Windows with the Microsoft Print to PDF printer (spike S3).");
+
+        RemoteDocument document = await _client.OpenAsync(Fixtures.SimpleText(), password: null, Ct);
+        string output = Path.Combine(Path.GetTempPath(), $"pdfsuite-s3-{Guid.NewGuid():N}.pdf");
+        try
+        {
+            int printed = await _client.PrintAsync(
+                document.Id, new PrintJob("Microsoft Print to PDF", [], [0, 1, 2], "PDF Suite S3 test", output), Ct);
+            Assert.Equal(3, printed);
+
+            using IPdfDocument result = new PdfSuite.Pdf.Pdfium.PdfiumEngine().Open(await WaitForPrintedFileAsync(output));
+            Assert.Equal(3, result.PageCount);
+            Assert.Equal(new PageSize(612, 792), result.GetPageSize(0));
+
+            // The heading "Simple text page 1" is at 16 pt with its baseline 72 pt from the top.
+            var heading = new PixelRegion(72, 52, 200, 24);
+            var margin = new PixelRegion(400, 20, 150, 40);
+            Assert.True(DarkPixels(result, heading) > 200, "Expected the printed heading where the original has it.");
+            Assert.Equal(0, DarkPixels(result, margin));
+        }
+        finally
+        {
+            File.Delete(output);
+        }
+    }
+
     [Fact]
     public void DisposingTheClient_EndsTheWorkerProcess()
     {
@@ -222,6 +255,38 @@ public sealed class WorkerPipelineTests : IDisposable
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    private static bool PrintToPdfInstalled() =>
+        OperatingSystem.IsWindows()
+        && Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Print\Printers\Microsoft Print to PDF") is not null;
+
+    // The spooler writes the file after EndDoc returns, so wait until it is complete and readable.
+    private static async Task<byte[]> WaitForPrintedFileAsync(string path)
+    {
+        var clock = Stopwatch.StartNew();
+        while (clock.Elapsed < TimeSpan.FromSeconds(60))
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    byte[] bytes = await File.ReadAllBytesAsync(path, Ct);
+                    if (bytes.AsSpan().LastIndexOf("%%EOF"u8) > 0)
+                    {
+                        return bytes;
+                    }
+                }
+            }
+            catch (IOException)
+            {
+                // Still being written.
+            }
+
+            await Task.Delay(250, Ct);
+        }
+
+        throw new TimeoutException($"The printed file '{path}' did not appear within 60 s.");
+    }
 
     private static WorkerClient StartWorker() =>
         WorkerClient.Start(new WorkerOptions(WorkerOptions.DefaultWorkerPath()) { EnableTestCommands = true });
@@ -240,6 +305,22 @@ public sealed class WorkerPipelineTests : IDisposable
 
         session.StateChanged += Handler;
         return reached.Task;
+    }
+
+    private static int DarkPixels(IPdfDocument document, PixelRegion region)
+    {
+        var pixels = new byte[region.Width * region.Height * 4];
+        document.RenderRegion(0, 1.0, region, pixels);
+        int dark = 0;
+        for (int i = 0; i < pixels.Length; i += 4)
+        {
+            if (pixels[i] < 128 && pixels[i + 1] < 128 && pixels[i + 2] < 128)
+            {
+                dark++;
+            }
+        }
+
+        return dark;
     }
 
     private static int DarkPixels(RenderedTile tile)
