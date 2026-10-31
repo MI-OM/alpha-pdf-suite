@@ -56,7 +56,8 @@ jobs:
             "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
           }
           [IO.File]::WriteAllText("fixture-hashes.txt", ($lines -join "`n") + "`n")
-          Get-Content fixture-hashes.txt
+          # Annotations are readable without signing in to GitHub; logs and artifacts are not.
+          foreach ($line in $lines) { "::notice title=Fixture hash (${{ runner.os }})::$line" }
 
       - uses: actions/upload-artifact@v7
         with:
@@ -78,5 +79,13 @@ jobs:
 
       - name: Compare
         run: |
-          diff hashes/fixture-hashes-Linux/fixture-hashes.txt hashes/fixture-hashes-Windows/fixture-hashes.txt
-          diff hashes/fixture-hashes-Linux/fixture-hashes.txt hashes/fixture-hashes-macOS/fixture-hashes.txt
+          status=0
+          for os in Windows macOS; do
+            while read -r file; do
+              echo "::warning title=Fixture differs (Linux vs $os)::$file"
+              status=1
+            done < <(join -j 2 -o 0,1.1,2.1 \
+                       <(sort -k2 hashes/fixture-hashes-Linux/fixture-hashes.txt) \
+                       <(sort -k2 "hashes/fixture-hashes-$os/fixture-hashes.txt") | awk '$2 != $3 { print $1 }')
+          done
+          exit $status
