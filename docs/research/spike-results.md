@@ -262,6 +262,8 @@ Pass: steps 2–5 work in both readers. Record what was heard for each step here
 
 ### Evidence
 - **Worker test** (`Print_ToMicrosoftPrintToPdf_ProducesEveryPageAtTheRightSize`) prints `simple-text.pdf` to Microsoft Print to PDF with an output file. It checks three pages, 612 × 792 pt, ink where the heading is, and a blank margin. It is skipped where that printer is not installed.
+  - It passes locally.
+  - CI at `842f7f8` (run 41196193897) is green on all three OSes. Whether the test ran or skipped on the GitHub Windows runner is not visible without signing in to read the logs.
 - **Dialog check** (`tools/spike/s3-print-dialog-check.ps1`, passed):
   1. Ctrl+P opens the dialog.
   2. The script confirms "Microsoft Print to PDF" is selected (it never presses Print otherwise).
