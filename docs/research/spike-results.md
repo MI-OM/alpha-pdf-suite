@@ -8,7 +8,7 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
 | S1 Tiled rendering | Windows done; Linux and macOS not measured | **Pass on Windows** against every target. The pipeline tests pass on all three OSes in CI (`7da2c2a`). Interactive measurements on Linux and macOS, and worker memory limits there, are still open |
 | S2 Document-text accessibility | Built; verified on Windows through UI Automation | **Promising.** The tree and keyboard reading behave as designed, with one focus event per key, and there is no measurable frame-pacing cost (A/B benchmark). Real screen-reader checks (NVDA, Narrator) are pending with the maintainer; Orca and VoiceOver need Linux and a Mac |
 | S3 Printing | Windows done; macOS and Linux planned and estimated | **Pass on Windows.** The worker prints with exact page geometry and vector output, but slowly: about 1 s and 256 KB per page with Print to PDF. macOS and Linux have a researched plan and estimates, not yet a proof of concept |
-| S4 qpdf from .NET | Built; passes on Windows; CI on all three OSes pending | **Pass on Windows:** AES-256 encryption, decryption, Unicode metadata, and full rewrites, all checked with PDFium as an independent reader |
+| S4 qpdf from .NET | Done | **Pass on all three OSes** (CI at `62a2efe`, run 41327508609): AES-256 encryption, decryption, Unicode metadata, and full rewrites, all checked with PDFium as an independent reader |
 | S5 Redaction method | Not started | — |
 | S6 Packaging | Workflow scaffolded | Not started. A local win-x64 self-contained publish works: 211 MB, of which about 100 MB is SkiaSharp and HarfBuzz native `.pdb` symbols. The published worker self-test passes |
 
@@ -322,8 +322,8 @@ Same rule: the app never parses the document. Both OSes use CUPS, so one approac
   - `PdfText.Contains`: searches raw bytes for text as a literal, as hex in either case, and as UTF-16BE
 - **`PdfiumDocument.GetMetadata`,** so qpdf's output is checked by an independent reader.
 
-### Evidence (Windows; CI for all three OSes pending)
-8 new tests, all passing (39 in total):
+### Evidence
+CI at `62a2efe` (run 41327508609) passed on Windows x64, Linux x64, and macOS arm64. On every runner the pinned qpdf archive downloaded and verified (1–3 s), the native library loaded (on Linux, after preloading its bundled libraries), and all 39 tests passed. 8 of them are new:
 - **Encryption:** AES-256 output has `/V 5 /R 6`. PDFium refuses it with no password and with a wrong one, and opens it with either the user or the owner password.
 - **Decryption:** with the right password, the output opens unencrypted. With a wrong one, qpdf reports a password error (code 4).
 - **Metadata:** "Résumé – naïve test ✓" round-trips through qpdf, and PDFium reads it identically, also after encryption. A null value removes a key.
