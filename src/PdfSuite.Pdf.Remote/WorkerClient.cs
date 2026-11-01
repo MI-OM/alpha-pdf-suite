@@ -267,6 +267,26 @@ public sealed class WorkerClient : IDisposable
         return lines;
     }
 
+    /// <summary>Returns the qpdf version the worker loaded. The worker loads qpdf to answer.</summary>
+    public async Task<string> GetQpdfVersionAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        int id = NextRequestId();
+        Pending pending = Register(id);
+        Send(MessageKind.GetEngineInfo, id, []);
+
+        Message response;
+        using (cancellationToken.Register(() => CancelRequest(id)))
+        {
+            response = await pending.Completion.Task.ConfigureAwait(false);
+        }
+
+        using var owned = response;
+        ThrowIfError(response);
+        Expect(response, MessageKind.EngineInfo);
+        return new PayloadReader(response.Payload).ReadString() ?? string.Empty;
+    }
+
     /// <summary>
     /// Prints pages through the worker. Returns the number of pages sent to the printer, or 0 if
     /// the user cancelled when the job started (for example in a print-to-file Save dialog).

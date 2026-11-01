@@ -171,6 +171,7 @@
         "type": "Project",
         "dependencies": {
           "PdfSuite.Pdf.Pdfium": "[1.0.0, )",
+          "PdfSuite.Pdf.Qpdf": "[1.0.0, )",
           "PdfSuite.Pdf.Remote": "[1.0.0, )"
         }
       },

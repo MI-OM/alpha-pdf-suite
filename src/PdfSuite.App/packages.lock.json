@@ -36,6 +36,12 @@
           "Avalonia": "12.1.4"
         }
       },
+      "Microsoft.NET.ILLink.Tasks": {
+        "type": "Direct",
+        "requested": "[10.0.13, )",
+        "resolved": "10.0.13",
+        "contentHash": "40yrBMsLEcjixBR4G+FiUaBPvxXIPSKJ2OgSrbOZcmSDBda4Sb0k7BWrfDpIvn3IvvDzwOL/tEPa6gDQfh6aRw=="
+      },
       "Avalonia.Angle.Windows.Natives": {
         "type": "Transitive",
         "resolved": "2.1.27548.20260419",
@@ -201,6 +207,12 @@
           "bblanchon.PDFium.macOS": "[158.0.8111, )"
         }
       },
+      "pdfsuite.pdf.qpdf": {
+        "type": "Project",
+        "dependencies": {
+          "PdfSuite.Pdf.Abstractions": "[1.0.0, )"
+        }
+      },
       "pdfsuite.pdf.remote": {
         "type": "Project",
         "dependencies": {
@@ -211,6 +223,7 @@
         "type": "Project",
         "dependencies": {
           "PdfSuite.Pdf.Pdfium": "[1.0.0, )",
+          "PdfSuite.Pdf.Qpdf": "[1.0.0, )",
           "PdfSuite.Pdf.Remote": "[1.0.0, )"
         }
       },

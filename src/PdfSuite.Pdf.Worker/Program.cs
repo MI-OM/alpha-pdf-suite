@@ -1,11 +1,12 @@
 using System.Globalization;
 using PdfSuite.Pdf.Abstractions;
 using PdfSuite.Pdf.Pdfium;
+using PdfSuite.Pdf.Qpdf;
 using PdfSuite.Pdf.Worker;
 
 // The worker process: the only place where PDF documents are parsed (PRD §8).
 //   --serve [--test-commands]   serve requests from the app on stdin/stdout
-//   --self-test <file.pdf>      open a file and print its page count (used by CI)
+//   --self-test <file.pdf>      open a file and print its page count and qpdf's version (used by CI)
 
 switch (args)
 {
@@ -44,7 +45,7 @@ static int SelfTest(string path)
         PageSize size = document.GetPageSize(0);
         Console.WriteLine(string.Create(
             CultureInfo.InvariantCulture,
-            $"{{\"pageCount\":{document.PageCount},\"firstPage\":{{\"width\":{size.Width},\"height\":{size.Height}}}}}"));
+            $"{{\"pageCount\":{document.PageCount},\"firstPage\":{{\"width\":{size.Width},\"height\":{size.Height}}},\"qpdfVersion\":\"{QpdfStructure.LibraryVersion}\"}}"));
         return 0;
     }
     catch (PdfOpenException ex)

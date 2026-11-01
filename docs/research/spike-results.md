@@ -10,7 +10,7 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
 | S3 Printing | Windows done; macOS and Linux planned and estimated | **Pass on Windows.** The worker prints with exact page geometry and vector output, but slowly: about 1 s and 256 KB per page with Print to PDF. macOS and Linux have a researched plan and estimates, not yet a proof of concept |
 | S4 qpdf from .NET | Done | **Pass on all three OSes** (CI at `62a2efe`, run 41327508609): AES-256 encryption, decryption, Unicode metadata, and full rewrites, all checked with PDFium as an independent reader |
 | S5 Redaction method | Done; worker integration and ADR open | **Pass on all three OSes** (CI at `29ed037`, run 41338226605). No canary survives in any of the 7 canary fixtures (13 canaries), and all 7 negative controls are rejected, each by the check meant for it. Glyph-level probe: **yes** for the three fonts tried, with caveats for real-world fonts (finding 36). Still to do: run it in the worker, and write ADR-0006 |
-| S6 Packaging | Workflow scaffolded | Not started. A local win-x64 self-contained publish works: 211 MB, of which about 100 MB is SkiaSharp and HarfBuzz native `.pdb` symbols. The published worker self-test passes |
+| S6 Packaging | Built; Windows verified locally; the Package workflow has not run yet | **Pending CI.** NativeAOT works for the app and the worker. On Windows the app folder is 53.6 MB and the signed MSIX 22.4 MB, and the window opens in 0.4 s on first launch and 0.2 s warm. The macOS and Linux packages, and installing every package on a fresh machine, are what the Package workflow checks |
 
 ## S0 — Skeleton, CI, and fixtures (2026-10-21)
 
@@ -123,7 +123,7 @@ Machine: i5-1235U, 12 logical cores, Windows 11 x64, scaling 1.0, 1000 × 701 DI
 
 - **Drawing cost:** the UI thread spends under 0.2 ms per frame drawing (p95), so frame pacing is set by the compositor, not by the view.
 - **Visual check:** a window capture shows correct pages, text, and images, with no seams.
-- **Startup:** process start to window took 5.5 s on a cold first launch of a fresh Release build, against 2.9–3.5 s warm in S0. This is S6's problem: NativeAOT and ReadyToRun.
+- **Startup:** process start to window took 5.5 s on a cold first launch of a fresh Release build, against 2.9–3.5 s warm in S0. This is S6's problem: NativeAOT and ReadyToRun. S6 measured both (finding 39).
 - **Re-measured after S2 (finding 19):** six further runs with the GPU and 256 px tiles met every S1 target. The worst frame was 36 ms and p95 17.6–18.5 ms at all zoom levels.
 
 ### Findings
@@ -446,3 +446,86 @@ CI at `29ed037` (run 41338226605) passed on Windows x64, Linux x64, and macOS ar
 ### Still open for S5
 - ADR-0006, v1 redaction method and verification, from these findings
 - moving redaction into the worker
+
+## S6 — Packaging in CI (2026-11-01)
+
+### Built
+- **`tools/package/`** (Windows PowerShell 5.1 and PowerShell 7, plus one POSIX sh script):
+  - `publish.ps1`: publishes the app and the worker for one runtime identifier into one folder, as NativeAOT (for packages) or self-contained ReadyToRun (for comparison only). Symbols go to a separate folder. It fails if the worker, PDFium or qpdf is missing.
+  - `package-windows.ps1`: an MSIX for a full-trust desktop app, with a `pdf-suite` execution alias. It is packed with `makeappx` and signed with `signtool`. The test certificate is created in memory on every run and never enters a certificate store; its public part is written next to the package.
+  - `package-macos.ps1`: `PDF Suite.app` with an `Info.plist` and an icon. Every Mach-O file is signed ad hoc with the hardened runtime. The DMG has the usual link to Applications.
+  - `package-linux.ps1`:
+    - an AppImage, built with appimagetool and the AppImage runtime at pinned, SHA-256-verified versions
+    - a .deb that installs to `/opt/pdf-suite`, declares the libraries the app loads at run time, and adds a `pdf-suite` command and a desktop entry
+  - `smoke-test.ps1` and `smoke-test.sh`: launch the app several times with `--smoke-test` and report startup times as public annotations.
+  - A placeholder icon drawn in code, with no image files or third-party art.
+- **App:**
+  - `--smoke-test` opens a file, waits until the first page is sharp, and asks the worker for qpdf's version. It writes startup times to JSON, and exits with 0 only if both worked.
+  - The benchmark's JSON no longer uses reflection (finding 38). It has the same fields, plus the code generation mode.
+  - `IsAotCompatible` runs the AOT and trimming analyzers on every build.
+- **Worker:** loads qpdf, so packages carry it for each runtime identifier, as the product will need (finding 37). A new `GetEngineInfo` request returns qpdf's version, and `--self-test` prints it.
+- **Package workflow** (`.github/workflows/package.yml`), on pushes that change code:
+  - one job per OS: locked restore, fixtures, NativeAOT and ReadyToRun publishes, smoke tests of both folders, the packages, and a list of linked libraries
+  - then each package installed on a fresh runner and launched:
+    - the MSIX on Windows, after trusting the test certificate
+    - the DMG on macOS, with a Gatekeeper assessment
+    - the .deb in a bare `ubuntu:24.04` container
+    - the AppImage on Ubuntu
+- One new test: the worker reports the qpdf version it loaded.
+
+### Evidence (Windows, development machine)
+- **Build and tests:** the Release build has 0 warnings, and 62 tests pass (the 3 explicit probes are skipped). The worker self-test prints `"qpdfVersion":"12.4.2"`.
+- **NativeAOT:** both programs publish with no AOT or trimming warnings, with warnings treated as errors.
+- **MSIX:** built and signed, 22.4 MB. It was not installed on this machine: that needs the test certificate imported into the machine's TrustedPeople store, which is left to CI's throwaway runners.
+- **Startup:** smoke tests on `large-2000-pages.pdf`, run back to back, 4 runs each. Times are from process start to the window, and to the first page sharp:
+
+| Build | Folder | First run | Warm (runs 2–4) |
+|---|---|---|---|
+| NativeAOT (packages) | 53.6 MB, 15 files | 393 ms / 682 ms | 168–186 ms / 307–341 ms |
+| Self-contained ReadyToRun | 133.8 MB, 238 files | 1,363 ms / 1,881 ms | 373–431 ms / 578–650 ms |
+| Framework-dependent build output (JIT), as measured in S0 and S1 | Needs .NET installed | 1,118 ms / 1,615 ms | 641–646 ms / 951–958 ms |
+
+- **What "first run" means here:** the first launch after publishing, with the files still in the OS cache. The very first NativeAOT launch, straight after compiling, took 525 ms / 1,176 ms. True cold starts are what the CI install jobs measure, on fresh runners.
+- **The full S1 benchmark on the NativeAOT build** (two runs, GPU, 256 px tiles):
+  - p95 frame interval of 17.4–18.5 ms at every zoom level, no blank tiles, and peak app plus worker memory of 541 MB. Scrolling is no worse than with the JIT.
+  - The first run had one 238 ms stall at 400%. GC paused for only 12 ms in that whole phase, so GC does not explain it. The second run had no stall over 50 ms; its worst frame was 37 ms.
+  - Treated as an outside interruption, not reproduced. Worth watching in Milestone 1.
+- **What the NativeAOT folder holds (win-x64):**
+  - the app: 18.0 MB
+  - Skia: 11.1 MB
+  - PDFium: 7.2 MB
+  - qpdf: 7.1 MB, with OpenSSL linked statically
+  - ANGLE: 5.1 MB
+  - the worker: 1.8 MB
+  - HarfBuzz: 1.7 MB
+  - the MSVC runtime, from qpdf's archive: 1.6 MB
+
+  Symbols kept out of packages: 184 MB.
+
+### Findings
+38. **NativeAOT works for both programs.**
+    - The worker already compiled cleanly.
+    - The app's only blocker was the S1 benchmark, which serialised anonymous types by reflection (IL2026, IL3050). It now builds `JsonObject`s.
+    - Avalonia 12.1.4, SkiaSharp, HarfBuzzSharp and the project's own bindings produced no AOT or trimming warnings, with warnings treated as errors.
+    - **One trap:** a `JsonArray` collection initialiser calls the generic `Add<T>`, which is not AOT-safe, unless the elements are typed `JsonNode`. The analyzer caught it at build time.
+39. **Startup meets the PRD target (under 3 s) with room to spare.** Warm, NativeAOT shows the first page sharp in about 0.3 s, against 0.6 s for ReadyToRun and 0.95 s for the plain build output.
+    - S0's 2.9–3.5 s warm for the framework-dependent build did not reproduce: the same build took 0.64 s today.
+    - Defender scanning a new build, or machine load, would explain it, but that is not verified.
+40. **NativeAOT also makes the app smaller:** 53.6 MB in 15 files, against 133.8 MB in 238 files for ReadyToRun. About 32 MB of the folder is native libraries the project does not compile: Skia, PDFium, qpdf, ANGLE, HarfBuzz and the MSVC runtime.
+41. **`PublishAot` in a project file makes the lock files depend on the OS.**
+    - Restore then adds the build machine's runtime identifier (`win-x64` here). Lock files written on Windows would fail CI's locked restore on Linux and macOS (`NU1004`).
+    - So `PublishAot` is passed at publish time, and `IsAotCompatible` runs the analyzers in ordinary builds.
+42. **Publishes restore packages that no lock file checks.** For NativeAOT, that is the ILCompiler package for the runtime identifier (36 MB for `win-x64`), at the version the pinned SDK sets. Locking it needs one of:
+    - declaring every runtime identifier in the projects, which adds all three ILCompiler packages to every restore
+    - committing a lock file per runtime identifier for every project in the publish graph (15 files)
+
+    Decide in Milestone 0, in ADR-0005. It is recorded in the inventory.
+43. **Building NativeAOT locally on Windows needs `vswhere.exe` on PATH.** The ILCompiler build targets call it by name, but the Visual Studio installer does not put it on PATH. The error is misleading ("The filename, directory name, or volume label syntax is incorrect"). `publish.ps1` adds it.
+44. **A trimmed fallback does not work with two programs in one folder.** Each is trimmed against its own code, which produces two different versions of the same framework files. So the comparison build is ReadyToRun and untrimmed. If NativeAOT ever had to be dropped, the worker would need its own folder and runtime.
+45. **Every AppImage contains LGPL-2.1 code:** the AppImage runtime links libfuse statically. Shipping an AppImage brings the same kind of obligations as qpdf's Linux libraries (finding 26). The .deb does not add this.
+
+### Still open for S6
+- **The Package workflow's first run:** the macOS and Linux NativeAOT builds, all four installs on fresh runners, and cold-start times there.
+- ADR-0005, packaging and distribution channels.
+- Notarisation, which needs the Apple Developer Program, and a real Windows signing route (spike plan §9).
+- Packages for Linux arm64, macOS x64 and Windows arm64: not attempted.

@@ -26,6 +26,16 @@ public sealed class QpdfException(int code, string message) : Exception(message)
 /// </summary>
 public static class QpdfStructure
 {
+    /// <summary>The version of the loaded qpdf library. Loads it on first use.</summary>
+    public static unsafe string LibraryVersion
+    {
+        get
+        {
+            QpdfNative.EnsureResolver();
+            return System.Runtime.InteropServices.Marshal.PtrToStringUTF8((nint)QpdfNative.qpdf_get_qpdf_version()) ?? string.Empty;
+        }
+    }
+
     public static bool IsEncrypted(ReadOnlySpan<byte> pdf)
     {
         // qpdf can tell without the password; a wrong-password error still means encrypted.

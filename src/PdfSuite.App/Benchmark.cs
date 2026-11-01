@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Avalonia.Controls;
 using PdfSuite.Pdf.Remote;
 
@@ -11,6 +12,8 @@ namespace PdfSuite.App;
 /// then scrolls at a constant speed at several zoom levels, recording frame intervals, how
 /// many frames showed blank or preview-only tiles, tile latency, and app plus worker memory.
 /// With --kill-worker, a final phase kills the worker mid-scroll and times the recovery.
+/// With --smoke-test (spike S6), it stops once the first page is sharp and records only the
+/// startup times; packaging CI uses it to launch an installed package.
 /// Results go to a JSON file. The window must stay visible: a hidden window gets no frames.
 /// </summary>
 internal sealed class Benchmark(MainWindow window, AppOptions options)
@@ -26,7 +29,11 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
     private long _peakWorkerPrivate;
     private long _peakCombinedWorkingSet;
 
-    public async Task RunAsync()
+    /// <summary>
+    /// Returns false if the document did not open, its first page never became sharp, or (smoke
+    /// test only) the worker could not load qpdf.
+    /// </summary>
+    public async Task<bool> RunAsync()
     {
         _view.TileArrived += (latency, render) =>
         {
@@ -38,18 +45,45 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
         var open = Stopwatch.StartNew();
         if (!await window.OpenFileAsync(options.File!))
         {
-            await WriteResultsAsync(new { error = "The document could not be opened." });
-            return;
+            await WriteResultsAsync(new JsonObject { ["error"] = "The document could not be opened." });
+            return false;
         }
 
         double openMs = open.Elapsed.TotalMilliseconds;
-        await WaitForFrameAsync(s => s.VisibleTiles > 0 && s.SharpTiles == s.VisibleTiles, TimeSpan.FromSeconds(30));
+        bool firstPageSharp = await WaitForFrameAsync(s => s.VisibleTiles > 0 && s.SharpTiles == s.VisibleTiles, TimeSpan.FromSeconds(30));
         double firstPageMs = open.Elapsed.TotalMilliseconds;
+
+        if (options.SmokeTest)
+        {
+            // The worker loads qpdf to answer, which checks that packaging put it where the worker looks.
+            string? qpdfVersion = null, qpdfError = null;
+            try
+            {
+                qpdfVersion = await _view.Session!.GetQpdfVersionAsync();
+            }
+            catch (Exception ex) when (ex is WorkerException or WorkerExitedException)
+            {
+                qpdfError = ex.Message;
+            }
+
+            await WriteResultsAsync(new JsonObject
+            {
+                ["spikeItem"] = "S6",
+                ["recordedAt"] = DateTimeOffset.Now,
+                ["environment"] = EnvironmentInfo(),
+                ["document"] = new JsonObject { ["file"] = Path.GetFileName(options.File), ["pages"] = _view.Session!.PageSizes.Count },
+                ["firstPageSharp"] = firstPageSharp,
+                ["qpdfVersion"] = qpdfVersion,
+                ["qpdfError"] = qpdfError,
+                ["startup"] = StartupInfo(startup, openMs, firstPageMs),
+            });
+            return firstPageSharp && qpdfVersion is not null;
+        }
 
         using var sampler = new Timer(_ => SampleMemory(), null, TimeSpan.Zero, TimeSpan.FromMilliseconds(250));
 
         int pages = _view.Session!.PageSizes.Count;
-        var phases = new List<object>
+        var phases = new JsonArray
         {
             await RunPhaseAsync("scroll at 100%", zoom: 1, seconds: 15, startPage: 0),
             await RunPhaseAsync("scroll at 25%", zoom: 0.25, seconds: 8, startPage: Math.Min(300, pages - 1)),
@@ -63,50 +97,57 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
         }
 
         SampleMemory();
-        await WriteResultsAsync(new
+        await WriteResultsAsync(new JsonObject
         {
-            spikeItem = "S1",
-            recordedAt = DateTimeOffset.Now,
-            environment = new
+            ["spikeItem"] = "S1",
+            ["recordedAt"] = DateTimeOffset.Now,
+            ["environment"] = EnvironmentInfo(),
+            ["document"] = new JsonObject { ["file"] = Path.GetFileName(options.File), ["pages"] = pages },
+            ["startup"] = StartupInfo(startup, openMs, firstPageMs),
+            ["phases"] = phases,
+            ["tiles"] = new JsonObject
             {
-                os = RuntimeInformation.OSDescription,
-                architecture = RuntimeInformation.OSArchitecture.ToString(),
-                processors = Environment.ProcessorCount,
-                renderScaling = TopLevel.GetTopLevel(_view)?.RenderScaling,
-                viewportDips = new { width = _view.Bounds.Width, height = _view.Bounds.Height },
-                rendering = options.Software ? "software" : "default (GPU where available)",
-                tileSize = _view.TileSize,
-                readingElements = _view.ReadingElementsEnabled,
-                build = typeof(Benchmark).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyConfigurationAttribute), false)
-                    .OfType<System.Reflection.AssemblyConfigurationAttribute>().FirstOrDefault()?.Configuration,
+                ["count"] = _tileLatenciesMs.Count,
+                ["latencyMs"] = Percentiles(_tileLatenciesMs),
+                ["workerRenderMs"] = Percentiles(_tileRenderMs),
             },
-            document = new { file = Path.GetFileName(options.File), pages },
-            startup = new
+            ["memory"] = new JsonObject
             {
-                processStartToWindowMs = Math.Round(startup.TotalMilliseconds),
-                openMs = Math.Round(openMs),
-                openToFirstPageSharpMs = Math.Round(firstPageMs),
-                processStartToFirstPageSharpMs = Math.Round(startup.TotalMilliseconds + firstPageMs),
-            },
-            phases,
-            tiles = new
-            {
-                count = _tileLatenciesMs.Count,
-                latencyMs = Percentiles(_tileLatenciesMs),
-                workerRenderMs = Percentiles(_tileRenderMs),
-            },
-            memory = new
-            {
-                peakAppWorkingSetMb = Mb(_peakAppWorkingSet),
-                peakAppPrivateMb = Mb(_peakAppPrivate),
-                peakWorkerWorkingSetMb = Mb(_peakWorkerWorkingSet),
-                peakWorkerPrivateMb = Mb(_peakWorkerPrivate),
-                peakCombinedWorkingSetMb = Mb(_peakCombinedWorkingSet),
+                ["peakAppWorkingSetMb"] = Mb(_peakAppWorkingSet),
+                ["peakAppPrivateMb"] = Mb(_peakAppPrivate),
+                ["peakWorkerWorkingSetMb"] = Mb(_peakWorkerWorkingSet),
+                ["peakWorkerPrivateMb"] = Mb(_peakWorkerPrivate),
+                ["peakCombinedWorkingSetMb"] = Mb(_peakCombinedWorkingSet),
             },
         });
+        return firstPageSharp;
     }
 
-    private async Task<object> RunPhaseAsync(string name, double zoom, double seconds, int startPage, bool killWorker = false)
+    private JsonObject EnvironmentInfo() => new()
+    {
+        ["os"] = RuntimeInformation.OSDescription,
+        ["architecture"] = RuntimeInformation.OSArchitecture.ToString(),
+        ["processors"] = Environment.ProcessorCount,
+        ["renderScaling"] = TopLevel.GetTopLevel(_view)?.RenderScaling,
+        ["viewportDips"] = new JsonObject { ["width"] = _view.Bounds.Width, ["height"] = _view.Bounds.Height },
+        ["rendering"] = options.Software ? "software" : "default (GPU where available)",
+        ["tileSize"] = _view.TileSize,
+        ["readingElements"] = _view.ReadingElementsEnabled,
+        ["build"] = typeof(Benchmark).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyConfigurationAttribute), false)
+            .OfType<System.Reflection.AssemblyConfigurationAttribute>().FirstOrDefault()?.Configuration,
+        // NativeAOT has no JIT. A JIT build may still contain ReadyToRun code; the packaging script records that.
+        ["codeGeneration"] = System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported ? "JIT" : "NativeAOT",
+    };
+
+    private static JsonObject StartupInfo(TimeSpan startup, double openMs, double firstPageMs) => new()
+    {
+        ["processStartToWindowMs"] = Math.Round(startup.TotalMilliseconds),
+        ["openMs"] = Math.Round(openMs),
+        ["openToFirstPageSharpMs"] = Math.Round(firstPageMs),
+        ["processStartToFirstPageSharpMs"] = Math.Round(startup.TotalMilliseconds + firstPageMs),
+    };
+
+    private async Task<JsonNode> RunPhaseAsync(string name, double zoom, double seconds, int startPage, bool killWorker = false)
     {
         var settle = Stopwatch.StartNew();
         _view.SetZoom(zoom);
@@ -116,7 +157,7 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
 
         var intervals = new List<double>();
         var renderMs = new List<double>();
-        var stalls = new List<object>();
+        var stalls = new JsonArray();
         int gen0 = GC.CollectionCount(0), gen1 = GC.CollectionCount(1), gen2 = GC.CollectionCount(2);
         long allocated = GC.GetTotalAllocatedBytes();
         TimeSpan gcPause = GC.GetTotalPauseDuration();
@@ -147,13 +188,14 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
                     if (dt > 50)
                     {
                         // When stalls happen, and whether a GC ran, separates warm-up from steady state.
-                        stalls.Add(new
+                        JsonNode stall = new JsonObject
                         {
-                            atSeconds = Math.Round(elapsed, 2),
-                            ms = Math.Round(dt, 1),
-                            gcCountSoFar = GC.CollectionCount(0) - gen0,
-                            gcPauseMsSoFar = Math.Round((GC.GetTotalPauseDuration() - gcPause).TotalMilliseconds, 1),
-                        });
+                            ["atSeconds"] = Math.Round(elapsed, 2),
+                            ["ms"] = Math.Round(dt, 1),
+                            ["gcCountSoFar"] = GC.CollectionCount(0) - gen0,
+                            ["gcPauseMsSoFar"] = Math.Round((GC.GetTotalPauseDuration() - gcPause).TotalMilliseconds, 1),
+                        };
+                        stalls.Add(stall);
                     }
                 }
 
@@ -199,32 +241,32 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
         topLevel.RequestAnimationFrame(OnFrame);
         await done.Task;
 
-        return new
+        return new JsonObject
         {
-            name,
-            zoom,
-            settledBeforeScroll = settled,
-            zoomAndJumpToSharpMs = Math.Round(settleMs),
-            seconds = Math.Round(elapsed, 1),
-            frames,
-            extraTicks,
-            frameIntervalMs = Percentiles(intervals),
-            stallsOver50Ms = stalls,
-            gc = new
+            ["name"] = name,
+            ["zoom"] = zoom,
+            ["settledBeforeScroll"] = settled,
+            ["zoomAndJumpToSharpMs"] = Math.Round(settleMs),
+            ["seconds"] = Math.Round(elapsed, 1),
+            ["frames"] = frames,
+            ["extraTicks"] = extraTicks,
+            ["frameIntervalMs"] = Percentiles(intervals),
+            ["stallsOver50Ms"] = stalls,
+            ["gc"] = new JsonObject
             {
-                gen0 = GC.CollectionCount(0) - gen0,
-                gen1 = GC.CollectionCount(1) - gen1,
-                gen2 = GC.CollectionCount(2) - gen2,
-                pauseMs = Math.Round((GC.GetTotalPauseDuration() - gcPause).TotalMilliseconds, 1),
-                allocatedMb = Math.Round((GC.GetTotalAllocatedBytes() - allocated) / (1024.0 * 1024.0), 1),
+                ["gen0"] = GC.CollectionCount(0) - gen0,
+                ["gen1"] = GC.CollectionCount(1) - gen1,
+                ["gen2"] = GC.CollectionCount(2) - gen2,
+                ["pauseMs"] = Math.Round((GC.GetTotalPauseDuration() - gcPause).TotalMilliseconds, 1),
+                ["allocatedMb"] = Math.Round((GC.GetTotalAllocatedBytes() - allocated) / (1024.0 * 1024.0), 1),
             },
-            framesOver33Ms = intervals.Count(i => i > 33.4),
-            uiThreadDrawMs = Percentiles(renderMs),
-            framesWithBlankTilesPercent = Percent(framesWithBlank, frames),
-            framesWithPreviewOnlyTilesPercent = Percent(framesWithPreviewOnly, frames),
-            workerKilledAtSeconds = killedAt is null ? (double?)null : Math.Round(killedAt.Value, 2),
-            recoveryMs = killedAt is not null && recoveredAt is not null ? Math.Round((recoveredAt.Value - killedAt.Value) * 1000) : (double?)null,
-            appStillRunning = true,
+            ["framesOver33Ms"] = intervals.Count(i => i > 33.4),
+            ["uiThreadDrawMs"] = Percentiles(renderMs),
+            ["framesWithBlankTilesPercent"] = Percent(framesWithBlank, frames),
+            ["framesWithPreviewOnlyTilesPercent"] = Percent(framesWithPreviewOnly, frames),
+            ["workerKilledAtSeconds"] = killedAt is null ? null : Math.Round(killedAt.Value, 2),
+            ["recoveryMs"] = killedAt is not null && recoveredAt is not null ? Math.Round((recoveredAt.Value - killedAt.Value) * 1000) : null,
+            ["appStillRunning"] = true,
         };
     }
 
@@ -278,24 +320,31 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
         }
     }
 
-    private async Task WriteResultsAsync(object results)
+    private async Task WriteResultsAsync(JsonObject results)
     {
         string path = options.OutputPath
             ?? Path.Combine("artifacts", "benchmarks", $"s1-{DateTime.Now:yyyyMMdd-HHmmss}-{(options.Software ? "software" : "gpu")}-tile{_view.TileSize}.json");
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
+        await File.WriteAllTextAsync(path, results.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    private static object Percentiles(List<double> values)
+    private static JsonObject Percentiles(List<double> values)
     {
         if (values.Count == 0)
         {
-            return new { count = 0 };
+            return new JsonObject { ["count"] = 0 };
         }
 
         double[] sorted = [.. values.Order()];
         double At(double p) => Math.Round(sorted[Math.Min(sorted.Length - 1, (int)Math.Ceiling(p * sorted.Length) - 1)], 2);
-        return new { count = sorted.Length, p50 = At(0.50), p95 = At(0.95), p99 = At(0.99), max = Math.Round(sorted[^1], 2) };
+        return new JsonObject
+        {
+            ["count"] = sorted.Length,
+            ["p50"] = At(0.50),
+            ["p95"] = At(0.95),
+            ["p99"] = At(0.99),
+            ["max"] = Math.Round(sorted[^1], 2),
+        };
     }
 
     private static double Percent(int part, int whole) => whole == 0 ? 0 : Math.Round(100.0 * part / whole, 1);

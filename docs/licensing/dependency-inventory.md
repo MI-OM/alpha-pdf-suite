@@ -20,7 +20,7 @@
 
 | Library | Version | Licence | Source and verification | Used by | Bundled with it | Contacts network? |
 |---|---|---|---|---|---|---|
-| qpdf | 12.4.2 | Apache-2.0 | Official release archives from github.com/qpdf/qpdf, fetched by `tools/qpdf/fetch-qpdf.ps1`. Checked against SHA-256 values pinned in the script, copied from qpdf's published `qpdf-12.4.2.sha256`. The Sigstore signature on that list is not yet verified | `PdfSuite.Pdf.Qpdf` (tests now; the worker from S5) | See the next table | No |
+| qpdf | 12.4.2 | Apache-2.0 | Official release archives from github.com/qpdf/qpdf, fetched by `tools/qpdf/fetch-qpdf.ps1`. Checked against SHA-256 values pinned in the script, copied from qpdf's published `qpdf-12.4.2.sha256`. The Sigstore signature on that list is not yet verified | `PdfSuite.Pdf.Qpdf`: the tests, redaction, and the worker, which ships it in packages from S6 | See the next table | No |
 
 What each platform's archive brings, and what it obliges us to do:
 
@@ -40,6 +40,19 @@ Not used, on purpose:
 - **Microsoft.NET.Test.Sdk and xunit.runner.visualstudio.** xunit.v3 4.x runs on Microsoft.Testing.Platform (enabled in `global.json`), so these VSTest adapters are not needed.
 - **The `bblanchon.PDFium` metapackage.** It also pulls Android, iOS, and WebAssembly binaries.
 
+### Packaging tools (spike S6)
+
+| Tool | Version | Licence | Source and verification | Ships in packages? | Notes |
+|---|---|---|---|---|---|
+| NativeAOT compiler and runtime: `Microsoft.DotNet.ILCompiler` and `runtime.<rid>.Microsoft.DotNet.ILCompiler` | 10.0.13, set by the pinned SDK | MIT | nuget.org, restored by `dotnet publish -p:PublishAot=true`. **Not in the committed lock files** (spike results, finding 42) | **Yes.** The .NET runtime is compiled into both executables | The .NET runtime's third-party notices must ship with the app (§4) |
+| AppImage runtime (`type2-runtime`) | 20251108 | MIT, with statically linked musl (MIT), **libfuse (LGPL-2.1)**, squashfuse (BSD-2-Clause), zstd (BSD-3-Clause) and zlib (zlib licence), per the release's `LICENSE` | Release asset `runtime-x86_64` from github.com/AppImage/type2-runtime. SHA-256 pinned in `tools/package/package-linux.ps1`, from the GitHub release API. The release's own signature (`.sig`) is not yet verified | **Yes.** It is the first part of every AppImage | **LGPL-2.1 obligations for the AppImage:** ship the notices, and offer libfuse's source and the means to relink |
+| appimagetool | 1.9.1 | MIT | Release asset from github.com/AppImage/appimagetool, SHA-256 pinned in the same script | No | Runs with `APPIMAGE_EXTRACT_AND_RUN=1`, so the build machine needs no FUSE |
+| Windows SDK `makeappx.exe` and `signtool.exe` | 10.0.26100 | Windows SDK licence terms | Visual Studio installer (locally), runner image (CI) | No | — |
+| C and C++ linkers for NativeAOT | MSVC from Visual Studio Build Tools 2026 (locally); runner images (CI); clang from Ubuntu | Microsoft; Apache-2.0 with LLVM exception | Visual Studio installer, Xcode on the runner, apt | No | Libraries linked into the executables are listed by the Package workflow (`ldd`, `otool -L`) |
+| `dpkg-deb`, `hdiutil`, `codesign`, `sips`, `iconutil` | OS versions | OS tools | Runner images | No | — |
+
+The packages also ship a placeholder icon drawn by `tools/package/common.ps1`. It contains no third-party artwork.
+
 ## 2. Transitive dependencies
 
 | Package | Version | Licence | Pulled in by | Notes |
@@ -51,7 +64,7 @@ Not used, on purpose:
 | HarfBuzzSharp (+ NativeAssets.*) | 8.3.1.3 | MIT | Avalonia.HarfBuzz | Native HarfBuzz binaries |
 | MicroCom.Runtime | 0.11.6 | MIT | Avalonia | — |
 | Tmds.DBus.Protocol | 0.94.1 | MIT | Avalonia.FreeDesktop | Linux D-Bus (portals, accessibility) |
-| Microsoft.NET.ILLink.Tasks | 10.0.13 | MIT | `IsAotCompatible` | Build-time trimming and AOT analyzers only |
+| Microsoft.NET.ILLink.Tasks | 10.0.13 | MIT | `IsAotCompatible` (now also on the App) | Build-time trimming and AOT analyzers only |
 | xunit.v3.* , xunit.analyzers | 4.0.2 / 2.2.0 | Apache-2.0 | xunit.v3 | Tests only |
 | Microsoft.Testing.Platform, .MSBuild, Extensions.TrxReport.Abstractions | 2.5.1 | MIT | xunit.v3.core.mtp-v2 | Tests only |
 | Microsoft.Testing.Extensions.Telemetry | 2.5.1 | MIT | xunit.v3.core.mtp-v2 | **Telemetry; hook removed (§3)** |
@@ -78,5 +91,8 @@ NuGet audit (`NuGetAuditMode=all`, warnings treated as errors) reported no known
   - Confirm the exact list per platform.
 - [ ] Note that the PDFium binaries are built without PartitionAlloc (viability assessment §3.3), and keep the worker isolation mandatory.
 - [ ] SkiaSharp and HarfBuzzSharp native notices: collect them for the About screen and notices file.
+- [ ] The .NET runtime's third-party notices (`THIRD-PARTY-NOTICES.TXT` in dotnet/runtime), which NativeAOT compiles into both executables.
+- [ ] AppImage: the LGPL-2.1 notice and source offer for libfuse in the runtime, or no AppImage. Verify the runtime's release signature.
+- [ ] Lock the packages that publishes restore for each runtime identifier, or record why not (spike results, finding 42).
 - [ ] Pin GitHub Actions to commit SHAs instead of major-version tags.
 - [ ] Reviewer and approval date for every row above.

@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using PdfSuite.Pdf.Abstractions;
 using PdfSuite.Pdf.Pdfium;
+using PdfSuite.Pdf.Qpdf;
 using PdfSuite.Pdf.Remote;
 
 namespace PdfSuite.Pdf.Worker;
@@ -102,6 +103,9 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
                     break;
                 case MessageKind.Print:
                     Print(request);
+                    break;
+                case MessageKind.GetEngineInfo:
+                    GetEngineInfo(request);
                     break;
                 case MessageKind.AllocateForTest when allowTestCommands:
                     AllocateForTest(request);
@@ -228,6 +232,16 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
         }
 
         MessageIO.Write(output, MessageKind.TextLines, request.RequestId, payload);
+    }
+
+    // Payload: [qpdf version] via WriteString. Loading qpdf here proves its native library is
+    // where the worker expects it, which packaging smoke tests rely on (spike S6).
+    private void GetEngineInfo(in Message request)
+    {
+        string qpdfVersion = QpdfStructure.LibraryVersion;
+        byte[] payload = new byte[PayloadWriter.SizeOf(qpdfVersion)];
+        new PayloadWriter(payload).WriteString(qpdfVersion);
+        MessageIO.Write(output, MessageKind.EngineInfo, request.RequestId, payload);
     }
 
     // Payload: [docId][int32 n][n x int32 page][printer][title][output][int32 length][DEVMODE bytes]; strings via WriteString.

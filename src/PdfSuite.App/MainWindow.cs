@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Layout;
 using Avalonia.Platform.Storage;
 using PdfSuite.Pdf.Abstractions;
@@ -83,10 +84,13 @@ internal sealed class MainWindow : Window
             return;
         }
 
-        if (_options.Benchmark)
+        if (_options.Benchmark || _options.SmokeTest)
         {
-            await new Benchmark(this, _options).RunAsync();
-            Close();
+            bool rendered = await new Benchmark(this, _options).RunAsync();
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            {
+                desktop.Shutdown(rendered ? 0 : 1);
+            }
         }
         else
         {

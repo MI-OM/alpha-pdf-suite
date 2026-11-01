@@ -4,6 +4,12 @@
     <OutputType>WinExe</OutputType>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!--
+      Runs the AOT and trimming analyzers on every build. Packaging publishes with -p:PublishAot=true
+      (tools/package/publish.ps1); setting PublishAot here would make restore add this machine's
+      RID, so the committed lock files would differ between operating systems (spike S6).
+    -->
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>

@@ -17,6 +17,7 @@ public enum MessageKind : byte
     Close = 4,
     GetTextLines = 5,
     Print = 6,
+    GetEngineInfo = 7,
     AllocateForTest = 90,
 
     // Responses
@@ -25,6 +26,7 @@ public enum MessageKind : byte
     Ack = 103,
     TextLines = 105,
     Printed = 106,
+    EngineInfo = 107,
     Error = 199,
 }
 

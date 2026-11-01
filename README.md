@@ -50,6 +50,23 @@ dotnet run --project src/PdfSuite.App -c Release -- fixtures/generated/large-200
 
 Options: `--tile 256|512`, `--software`, `--out results.json`. Results go to `artifacts/benchmarks/`.
 
+### Packages (spike S6)
+
+`tools/package/` builds installable packages from a NativeAOT publish. Each packaging script runs on its own OS:
+
+```bash
+pwsh tools/package/publish.ps1 -Rid win-x64
+pwsh tools/package/package-windows.ps1 -Layout artifacts/package/win-x64-aot/app -Output artifacts/package/pdf-suite-win-x64.msix
+pwsh tools/package/package-macos.ps1 -Layout artifacts/package/osx-arm64-aot/app -Output artifacts/package/pdf-suite-osx-arm64.dmg
+pwsh tools/package/package-linux.ps1 -Layout artifacts/package/linux-x64-aot/app -OutputDirectory artifacts/package
+```
+
+- **Toolchain:** NativeAOT needs the platform's C and C++ toolchain: Visual Studio's C++ build tools on Windows, Xcode's command-line tools on macOS, and `clang` and `zlib1g-dev` on Linux.
+- **Comparison build:** `publish.ps1 -Mode r2r` makes a self-contained ReadyToRun build, which is only used to compare size and startup.
+- **Signing:** the MSIX is signed with a throwaway test certificate. The DMG is signed ad hoc and not notarised. So neither installs as a trusted app on an ordinary machine.
+- **Smoke test:** `--smoke-test` (with `--out results.json`) opens the file, waits for the first page, and asks the worker for qpdf's version. It exits with 0 only if both work. `tools/package/smoke-test.ps1` (Windows) and `smoke-test.sh` (macOS, Linux) run it several times and report startup times.
+- **CI:** the Package workflow builds all of this, then installs each package on a fresh runner and launches it.
+
 ## Layout
 
 | Path | Contents |
@@ -59,9 +76,10 @@ Options: `--tile 256|512`, `--software`, `--out results.json`. Results go to `ar
 | `src/PdfSuite.Pdf.Qpdf` | qpdf bindings: AES-256 encryption, metadata, full rewrites (spike S4), and object-level editing |
 | `src/PdfSuite.Pdf.Redaction` | Redaction by rebuilding the document, and an independent verifier (spike S5) |
 | `src/PdfSuite.Pdf.Remote` | The app-to-worker protocol, worker client, crash-restarting document session, and Windows Job Object |
-| `src/PdfSuite.Pdf.Worker` | The out-of-process engine host (`--serve`), plus `--self-test` for CI |
+| `src/PdfSuite.Pdf.Worker` | The out-of-process engine host (`--serve`), plus `--self-test` for CI. It loads PDFium, and qpdf for its version so far |
 | `src/PdfSuite.App` | The Avalonia desktop shell: tiled document view and S1 benchmark |
 | `tools/PdfSuite.FixtureGenerator` | Synthetic, legally distributable test documents |
+| `tools/package` | NativeAOT publish, MSIX, DMG, AppImage and .deb packaging, and the launch smoke test (spike S6) |
 | `tests/PdfSuite.Spike.Tests` | Spike tests |
 | `docs/` | PRD, roadmap, agent playbook, UI copy, checklists, spike plan, research, licensing |
 

@@ -43,6 +43,16 @@ public sealed class WorkerPipelineTests : IDisposable
         Assert.Contains(remote, l => l.Text.Contains("CANARY-01"));
     }
 
+    // Spike S6: packaging smoke tests use this to check that qpdf's library ships next to the worker.
+    [Fact]
+    public async Task GetQpdfVersion_ReportsTheLibraryTheWorkerLoaded()
+    {
+        string version = await _client.GetQpdfVersionAsync(Ct);
+
+        Assert.Equal(PdfSuite.Pdf.Qpdf.QpdfStructure.LibraryVersion, version);
+        Assert.StartsWith("12.4.", version);
+    }
+
     [Fact]
     public async Task RenderTile_DrawsTextOnlyWhereThePageHasIt()
     {

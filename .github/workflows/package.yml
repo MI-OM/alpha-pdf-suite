@@ -1,8 +1,12 @@
-# Spike item S6 scaffold: self-contained publishes of the app and worker for one runtime per OS.
-# Installers (MSIX, notarised DMG, AppImage/.deb) and NativeAOT are added on spike Day 10.
+# Spike item S6 (docs/06-SPIKE-PLAN.md): build installable packages on each OS, then install each
+# one on a fresh runner and launch it with --smoke-test. Packages are NativeAOT. A self-contained
+# ReadyToRun build is published alongside, only to compare size and startup.
 name: Package (spike)
 
 on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
   workflow_dispatch:
 
 permissions:
@@ -15,8 +19,8 @@ env:
   DOTNET_NOLOGO: "1"
 
 jobs:
-  publish:
-    name: Publish (${{ matrix.rid }})
+  package:
+    name: Package (${{ matrix.rid }})
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +33,7 @@ jobs:
             rid: linux-x64
     runs-on: ${{ matrix.os }}
     steps:
+      # TODO(supply chain): pin actions to commit SHAs before the first release.
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
@@ -37,26 +42,216 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: NativeAOT and display prerequisites (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang zlib1g-dev xvfb xauth
+
       - name: Fetch qpdf (pinned release, SHA-256 verified)
         shell: pwsh
         run: ./tools/qpdf/fetch-qpdf.ps1 -Rid ${{ matrix.rid }}
 
-      # Not --locked-mode: the lock files do not yet cover runtime-specific packs. RID restores
-      # write their lock file under obj/ (Directory.Build.props). Day 10 decides whether to
-      # declare RuntimeIdentifiers so publishes can restore in locked mode too.
-      - name: Publish worker
-        run: dotnet publish src/PdfSuite.Pdf.Worker -c Release -r ${{ matrix.rid }} --self-contained -o publish/${{ matrix.rid }}
+      - name: Restore (locked)
+        run: dotnet restore PdfSuite.slnx --locked-mode
 
-      - name: Publish app
-        run: dotnet publish src/PdfSuite.App -c Release -r ${{ matrix.rid }} --self-contained -o publish/${{ matrix.rid }}
+      - name: Generate fixtures
+        run: dotnet run --project tools/PdfSuite.FixtureGenerator -c Release
 
-      - name: Size report
+      - name: Publish (NativeAOT)
+        shell: pwsh
+        run: ./tools/package/publish.ps1 -Rid ${{ matrix.rid }} -Mode aot
+
+      - name: Publish (self-contained ReadyToRun, for comparison)
+        shell: pwsh
+        run: ./tools/package/publish.ps1 -Rid ${{ matrix.rid }} -Mode r2r
+
+      - name: Linked libraries
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          for file in artifacts/package/${{ matrix.rid }}-aot/app/*; do
+            echo "== $file"
+            if [ "$RUNNER_OS" = macOS ]; then otool -L "$file" || true; else ldd "$file" || true; fi
+          done
+
+      - name: Smoke test the published folders (Windows)
+        if: runner.os == 'Windows'
+        continue-on-error: true
         shell: pwsh
         run: |
-          $bytes = (Get-ChildItem publish/${{ matrix.rid }} -Recurse -File | Measure-Object Length -Sum).Sum
-          "{0}: {1:N1} MB in {2} files" -f "${{ matrix.rid }}", ($bytes / 1MB), (Get-ChildItem publish/${{ matrix.rid }} -Recurse -File).Count
+          $failed = 0
+          foreach ($mode in 'r2r', 'aot') {
+            ./tools/package/smoke-test.ps1 -Label "${{ matrix.rid }} $mode folder" -Command "artifacts/package/${{ matrix.rid }}-$mode/app/PdfSuite.App.exe" -Fixture fixtures/generated/large-2000-pages.pdf
+            if ($LASTEXITCODE -ne 0) { $failed++ }
+          }
+          exit $failed
+
+      - name: Smoke test the published folders (macOS, Linux)
+        if: runner.os != 'Windows'
+        continue-on-error: true
+        run: |
+          status=0
+          for mode in r2r aot; do
+            sh tools/package/smoke-test.sh "${{ matrix.rid }} $mode folder" fixtures/generated/large-2000-pages.pdf 3 "artifacts/package/${{ matrix.rid }}-$mode/app/PdfSuite.App" || status=1
+          done
+          exit $status
+
+      - name: Package (MSIX)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/package/package-windows.ps1 -Layout artifacts/package/win-x64-aot/app -Output artifacts/package/out/pdf-suite-win-x64.msix
+
+      - name: Package (DMG)
+        if: runner.os == 'macOS'
+        shell: pwsh
+        run: ./tools/package/package-macos.ps1 -Layout artifacts/package/osx-arm64-aot/app -Output artifacts/package/out/pdf-suite-osx-arm64.dmg
+
+      - name: Package (AppImage and .deb)
+        if: runner.os == 'Linux'
+        shell: pwsh
+        run: ./tools/package/package-linux.ps1 -Layout artifacts/package/linux-x64-aot/app -OutputDirectory artifacts/package/out
+
+      # The install jobs run on fresh runners without the SDK build, so they get the fixture here.
+      - name: Add the fixture
+        shell: bash
+        run: cp fixtures/generated/large-2000-pages.pdf artifacts/package/out/
 
       - uses: actions/upload-artifact@v7
         with:
-          name: pdf-suite-${{ matrix.rid }}
-          path: publish/${{ matrix.rid }}
+          name: packages-${{ matrix.rid }}
+          path: artifacts/package/out
+
+  install-msix:
+    name: Install and launch (MSIX, Windows)
+    needs: package
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: packages-win-x64
+          path: packages
+
+      # A throwaway runner. Trusting a test certificate on a real machine is its owner's decision.
+      - name: Trust the test certificate and install
+        shell: pwsh
+        run: |
+          certutil -addstore TrustedPeople packages/pdf-suite-win-x64.cer
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Add-AppxPackage -Path packages/pdf-suite-win-x64.msix
+          $package = Get-AppxPackage PdfSuite.Spike
+          $package | Format-List Name, Version, Architecture, SignatureKind, Status, InstallLocation
+          $bytes = (Get-ChildItem $package.InstallLocation -Recurse -File | Measure-Object Length -Sum).Sum
+          "::notice title=MSIX installed::{0:N1} MB on disk" -f ($bytes / 1MB)
+
+      - name: Launch the installed app
+        shell: pwsh
+        run: ./tools/package/smoke-test.ps1 -Label 'MSIX installed' -Command "$env:LOCALAPPDATA\Microsoft\WindowsApps\pdf-suite.exe" -Fixture packages/large-2000-pages.pdf
+
+      - name: Uninstall
+        shell: pwsh
+        run: |
+          Get-AppxPackage PdfSuite.Spike | Remove-AppxPackage
+          if (Get-AppxPackage PdfSuite.Spike) { throw 'The package is still installed.' }
+          if (Test-Path "$env:LOCALAPPDATA\Microsoft\WindowsApps\pdf-suite.exe") { throw 'The execution alias is still there.' }
+
+  install-dmg:
+    name: Install and launch (DMG, macOS)
+    needs: package
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: packages-osx-arm64
+          path: packages
+
+      - name: Install from the DMG
+        run: |
+          hdiutil attach packages/pdf-suite-osx-arm64.dmg -nobrowse -mountpoint /tmp/pdf-suite-dmg
+          cp -R "/tmp/pdf-suite-dmg/PDF Suite.app" /Applications/
+          hdiutil detach /tmp/pdf-suite-dmg
+          codesign --verify --deep --strict --verbose=2 "/Applications/PDF Suite.app"
+          codesign --display --verbose=2 "/Applications/PDF Suite.app" 2>&1 | grep -E '^(Identifier|Format|CodeDirectory|Signature|TeamIdentifier|Runtime)'
+          echo "::notice title=DMG installed::$(du -sh "/Applications/PDF Suite.app" | cut -f1) on disk"
+
+      # A browser download is quarantined, and Gatekeeper then assesses the app like this.
+      - name: Gatekeeper assessment (informational)
+        run: |
+          if result=$(spctl --assess --type execute --verbose=4 "/Applications/PDF Suite.app" 2>&1); then
+            echo "::notice title=Gatekeeper::accepted: $result"
+          else
+            echo "::notice title=Gatekeeper::rejected: $result"
+          fi
+
+      - name: Launch the installed app
+        run: sh tools/package/smoke-test.sh "DMG installed" packages/large-2000-pages.pdf 3 "/Applications/PDF Suite.app/Contents/MacOS/PdfSuite.App"
+
+  # A bare Ubuntu image: apt must install everything the package declares. xvfb, needed to give the
+  # app a display, brings X libraries of its own, so this cannot prove that no X library is missing.
+  install-deb:
+    name: Install and launch (.deb, clean Ubuntu 24.04 container)
+    needs: package
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: packages-linux-x64
+          path: packages
+
+      - name: Install with apt
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ./packages/pdf-suite-linux-x64.deb
+          dpkg -s pdf-suite-spike | grep -E '^(Version|Installed-Size|Depends):'
+          echo "::notice title=.deb installed::$(du -sh /opt/pdf-suite | cut -f1) on disk"
+          apt-get install -y --no-install-recommends xvfb xauth
+
+      - name: Launch the installed app
+        run: sh tools/package/smoke-test.sh ".deb installed" packages/large-2000-pages.pdf 3 pdf-suite
+
+      - name: Remove
+        run: |
+          apt-get remove -y pdf-suite-spike
+          test ! -e /opt/pdf-suite/PdfSuite.App
+          test ! -e /usr/bin/pdf-suite
+
+  install-appimage:
+    name: Launch (AppImage, Ubuntu)
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: packages-linux-x64
+          path: packages
+
+      - name: Display prerequisites
+        run: command -v xvfb-run || { sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb xauth; }
+
+      # Artifacts do not keep file modes. An AppImage mounts itself with FUSE; if the runner cannot,
+      # the run is repeated with the runtime's extract-and-run mode, and each outcome is recorded.
+      - name: Launch the AppImage
+        run: |
+          chmod +x packages/pdf-suite-linux-x64.AppImage
+          echo "fusermount: $(command -v fusermount3 || command -v fusermount || echo none); /dev/fuse: $(ls -l /dev/fuse 2>&1)"
+          if ! sh tools/package/smoke-test.sh "AppImage (FUSE)" packages/large-2000-pages.pdf 3 "$PWD/packages/pdf-suite-linux-x64.AppImage"; then
+            echo "::warning title=AppImage::Running with FUSE failed; trying APPIMAGE_EXTRACT_AND_RUN=1"
+            APPIMAGE_EXTRACT_AND_RUN=1 sh tools/package/smoke-test.sh "AppImage (extract and run)" packages/large-2000-pages.pdf 3 "$PWD/packages/pdf-suite-linux-x64.AppImage"
+          fi

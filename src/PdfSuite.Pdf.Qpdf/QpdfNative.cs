@@ -38,6 +38,9 @@ internal static unsafe partial class QpdfNative
     }
 
     [LibraryImport(Library)]
+    internal static partial byte* qpdf_get_qpdf_version();
+
+    [LibraryImport(Library)]
     internal static partial nint qpdf_init();
 
     [LibraryImport(Library)]
