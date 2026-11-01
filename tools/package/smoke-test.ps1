@@ -55,4 +55,5 @@ foreach ($run in 1..$Runs) {
     }
 }
 
-if ($failed -gt 0) { exit 1 }
+# Always set an exit code: callers check $LASTEXITCODE, which a script that ends without one leaves stale.
+if ($failed -gt 0) { exit 1 } else { exit 0 }

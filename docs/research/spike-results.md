@@ -10,7 +10,7 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
 | S3 Printing | Windows done; macOS and Linux planned and estimated | **Pass on Windows.** The worker prints with exact page geometry and vector output, but slowly: about 1 s and 256 KB per page with Print to PDF. macOS and Linux have a researched plan and estimates, not yet a proof of concept |
 | S4 qpdf from .NET | Done | **Pass on all three OSes** (CI at `62a2efe`, run 41327508609): AES-256 encryption, decryption, Unicode metadata, and full rewrites, all checked with PDFium as an independent reader |
 | S5 Redaction method | Done; worker integration and ADR open | **Pass on all three OSes** (CI at `29ed037`, run 41338226605). No canary survives in any of the 7 canary fixtures (13 canaries), and all 7 negative controls are rejected, each by the check meant for it. Glyph-level probe: **yes** for the three fonts tried, with caveats for real-world fonts (finding 36). Still to do: run it in the worker, and write ADR-0006 |
-| S6 Packaging | Built; Windows verified locally; the Package workflow has not run yet | **Pending CI.** NativeAOT works for the app and the worker. On Windows the app folder is 53.6 MB and the signed MSIX 22.4 MB, and the window opens in 0.4 s on first launch and 0.2 s warm. The macOS and Linux packages, and installing every package on a fresh machine, are what the Package workflow checks |
+| S6 Packaging | Done; ADR-0005 open | **Pass on all three OSes** (Package workflow at `81ab077`, run 41356497705). The MSIX, DMG, AppImage and .deb each installed on a fresh runner and launched the S1 viewer, which rendered the 2,000-page fixture and loaded qpdf in the worker. Packages are NativeAOT and 18–24 MB. A first launch after installing reaches the window in 0.07–0.29 s; the AppImage takes 3.6 s. Not yet distributable: the MSIX has a test certificate, and Gatekeeper rejects the DMG, which is not notarised |
 
 ## S0 — Skeleton, CI, and fixtures (2026-10-21)
 
@@ -502,6 +502,37 @@ CI at `29ed037` (run 41338226605) passed on Windows x64, Linux x64, and macOS ar
 
   Symbols kept out of packages: 184 MB.
 
+### Evidence (CI)
+The Package workflow at `81ab077` (run 41356497705) passed on all three OSes. The CI workflow on the same commit (run 41356497684) also passed: 62 tests, and all 10 fixtures byte-identical across the OSes.
+
+**Every package installed on a fresh runner and launched.** Each launch rendered the first page of the 2,000-page fixture and loaded qpdf 12.4.2 in the worker. The first launch after installing is a cold start. Times are from process start to the window, and to the first page sharp:
+
+| Package and machine | Package | Installed | How it was installed | First launch | Warm (runs 2–3) |
+|---|---|---|---|---|---|
+| MSIX, Windows Server 2025 runner | 22.4 MB | 53.7 MB | Test certificate trusted, then `Add-AppxPackage`. Started through its `pdf-suite` alias, then uninstalled cleanly | 231 / 395 ms | 114–151 / 248–289 ms |
+| DMG, macOS arm64 runner | 24.1 MB | 51 MB | Mounted, and the app copied to /Applications | 285 / 1,054 ms | 109–117 / 286–339 ms |
+| .deb, bare `ubuntu:24.04` container | 18.4 MB | 55 MB | `apt install`, which pulled in 18 packages, ICU and DejaVu fonts among them. Removed cleanly | 71 / 146 ms | 54 / 128–129 ms |
+| AppImage, Ubuntu 24.04 runner | 21.6 MB | Runs in place | None: it mounted itself with FUSE | 3,561 / 3,818 ms | 180–187 / 283–290 ms |
+
+- **macOS signing:** the installed bundle verifies (`valid on disk`, `satisfies its Designated Requirement`), with the flags `adhoc,runtime` and no team identifier. Gatekeeper's assessment: `rejected`.
+- **Published folders, in the packaging jobs.** These are not fresh machines: the files had just been written. Window / first page sharp:
+
+| OS | NativeAOT folder | First run | Warm | ReadyToRun folder | First run | Warm |
+|---|---|---|---|---|---|---|
+| Windows x64 | 53.6 MB, 15 files | 91 / 212 ms | 82–93 / 196–199 ms | 133.8 MB, 238 files | 534 / 762 ms | 375–392 / 602–648 ms |
+| macOS arm64 | 51.2 MB, 7 files | 398 / 722 ms | 151–155 / 409–417 ms | 142.6 MB, 229 files | 1,259 / 3,257 ms | 318–341 / 724–833 ms |
+| Linux x64 | 54.6 MB, 15 files | 93 / 180 ms | 96–97 / 184–185 ms | 133.2 MB, 238 files | 2,022 / 2,179 ms | 378–401 / 523–564 ms |
+
+- **Linked libraries on Linux (`ldd`):**
+  - Both NativeAOT executables need only glibc (`libc`, `libm`).
+  - Skia needs fontconfig, FreeType and their dependencies.
+  - qpdf needs libstdc++, zlib, and GMP, through its bundled GnuTLS and Nettle.
+- **Build time:** a packaging job takes 2–3.5 minutes. Compiling both programs with NativeAOT takes 37–73 s of that.
+
+**Fixed after the run,** in the next commit, which CI has not yet run:
+- **A false failure:** the Windows step that smoke-tests the published folders reported a failure although all six runs passed. `smoke-test.ps1` ended without setting an exit code, so the step read a stale `$LASTEXITCODE`. The step does not block, so the run still passed.
+- **Two undeclared libraries:** the .deb now also declares `libgmp10` and `libfreetype6`, which `ldd` showed are linked (finding 47).
+
 ### Findings
 38. **NativeAOT works for both programs.**
     - The worker already compiled cleanly.
@@ -523,9 +554,22 @@ CI at `29ed037` (run 41338226605) passed on Windows x64, Linux x64, and macOS ar
 43. **Building NativeAOT locally on Windows needs `vswhere.exe` on PATH.** The ILCompiler build targets call it by name, but the Visual Studio installer does not put it on PATH. The error is misleading ("The filename, directory name, or volume label syntax is incorrect"). `publish.ps1` adds it.
 44. **A trimmed fallback does not work with two programs in one folder.** Each is trimmed against its own code, which produces two different versions of the same framework files. So the comparison build is ReadyToRun and untrimmed. If NativeAOT ever had to be dropped, the worker would need its own folder and runtime.
 45. **Every AppImage contains LGPL-2.1 code:** the AppImage runtime links libfuse statically. Shipping an AppImage brings the same kind of obligations as qpdf's Linux libraries (finding 26). The .deb does not add this.
+46. **Ad hoc signing with the hardened runtime is enough to run, not to distribute.**
+    - The app loads its own ad hoc signed libraries under the hardened runtime without the library-validation exception, and NativeAOT needs no JIT entitlement. So the bundle needs no entitlements at all.
+    - But Gatekeeper rejects it, so a copy downloaded with a browser would not open normally. Distributing on macOS needs a Developer ID and notarisation, through the Apple Developer Program.
+47. **A bare container checks a .deb's dependencies only as far as its base image goes.**
+    - apt installed everything the package declares, and the app ran.
+    - But `ldd` found two linked libraries the package did not declare directly. FreeType (Skia) came in through fontconfig, and GMP (qpdf's crypto) is part of every Ubuntu base image. Both are now declared.
+    - So dependency lists should come from `ldd` plus the libraries loaded at run time, not from a passing install alone.
+48. **The AppImage's first launch took 3.6 s, against 0.07–0.29 s for the installed packages.**
+    - Its warm launches took 0.18 s, still about three times the .deb's 0.05 s.
+    - The likely cause is reading the compressed image through FUSE, cold on the first launch. That is not investigated.
+    - It is the only package measurement over the PRD's 3 s target, and it is a first launch on a CI runner.
+49. **NativeAOT has the edge on every OS.** A first launch after installing reaches the first page in 0.13–1.05 s. The ReadyToRun build's first runs are 2–4.5 times slower, up to 3.3 s to the first page on macOS. This supports NativeAOT as the v1 build mode (ADR-0005).
 
 ### Still open for S6
-- **The Package workflow's first run:** the macOS and Linux NativeAOT builds, all four installs on fresh runners, and cold-start times there.
-- ADR-0005, packaging and distribution channels.
-- Notarisation, which needs the Apple Developer Program, and a real Windows signing route (spike plan §9).
-- Packages for Linux arm64, macOS x64 and Windows arm64: not attempted.
+- **ADR-0005,** packaging and distribution channels: build mode, formats, signing and notarisation, and locking publish restores (finding 42).
+- **Signing:** notarisation, which needs the Apple Developer Program, and a real Windows signing route (spike plan §9).
+- **The AppImage:** its slow first launch (finding 48), and the LGPL obligations it brings (finding 45).
+- **A real Linux desktop:** the Linux packages ran under Xvfb only. A Wayland session with XWayland is still to be tried, together with the S1 Linux measurements.
+- **Other architectures:** packages for Linux arm64, macOS x64 and Windows arm64 were not attempted.

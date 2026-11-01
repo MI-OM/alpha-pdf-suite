@@ -112,9 +112,10 @@ Copy-Item -Recurse (Join-Path $Layout '*') $opt
 Write-PlaceholderIcon 256 (Join-Path $root "usr/share/icons/hicolor/256x256/apps/$command.png")
 Set-Modes $root
 
-# Libraries loaded at run time, so dpkg-shlibdeps cannot see them: X11, ICE, SM and fontconfig
-# (Avalonia), ICU (.NET globalisation; versions of current Debian and Ubuntu releases). Linked
-# libraries: glibc, libgcc, libstdc++ and zlib (NativeAOT, qpdf).
+# Libraries loaded at run time, which dpkg-shlibdeps cannot see: X11, ICE, SM and fontconfig
+# (Avalonia), and ICU (.NET globalisation; the versions in current Debian and Ubuntu releases).
+# Linked libraries, from ldd in the Package workflow: glibc (the executables need nothing else),
+# fontconfig and FreeType (Skia), libstdc++, libgcc and zlib (qpdf), and GMP (qpdf's GnuTLS and Nettle).
 $installedKb = [math]::Ceiling((Get-FolderSize $root).Bytes / 1KB)
 $control = @"
 Package: $command-spike
@@ -122,7 +123,7 @@ Version: $Version
 Architecture: amd64
 Maintainer: PDF Suite spike <maintainers@pdfsuite.invalid>
 Installed-Size: $installedKb
-Depends: libc6, libgcc-s1, libstdc++6, zlib1g, libicu76 | libicu74 | libicu72 | libicu70, libx11-6, libice6, libsm6, libfontconfig1
+Depends: libc6, libgcc-s1, libstdc++6, zlib1g, libgmp10, libfreetype6, libicu76 | libicu74 | libicu72 | libicu70, libx11-6, libice6, libsm6, libfontconfig1
 Section: text
 Priority: optional
 Description: PDF Suite technical spike build
