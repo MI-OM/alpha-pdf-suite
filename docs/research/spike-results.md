@@ -9,7 +9,7 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
 | S2 Document-text accessibility | Built; verified on Windows through UI Automation | **Promising.** The tree and keyboard reading behave as designed, with one focus event per key, and there is no measurable frame-pacing cost (A/B benchmark). Real screen-reader checks (NVDA, Narrator) are pending with the maintainer; Orca and VoiceOver need Linux and a Mac |
 | S3 Printing | Windows done; macOS and Linux planned and estimated | **Pass on Windows.** The worker prints with exact page geometry and vector output, but slowly: about 1 s and 256 KB per page with Print to PDF. macOS and Linux have a researched plan and estimates, not yet a proof of concept |
 | S4 qpdf from .NET | Done | **Pass on all three OSes** (CI at `62a2efe`, run 41327508609): AES-256 encryption, decryption, Unicode metadata, and full rewrites, all checked with PDFium as an independent reader |
-| S5 Redaction method | Built; verified locally on Windows, CI pending | **Pass locally.** No canary survives in any of the 7 canary fixtures (13 canaries), and all 7 negative controls are rejected, each by the check meant for it. Glyph-level probe: **yes** for the three fonts tried, with caveats for real-world fonts (finding 36). Still to do: run it in the worker, and write ADR-0006 |
+| S5 Redaction method | Done; worker integration and ADR open | **Pass on all three OSes** (CI at `29ed037`, run 41338226605). No canary survives in any of the 7 canary fixtures (13 canaries), and all 7 negative controls are rejected, each by the check meant for it. Glyph-level probe: **yes** for the three fonts tried, with caveats for real-world fonts (finding 36). Still to do: run it in the worker, and write ADR-0006 |
 | S6 Packaging | Workflow scaffolded | Not started. A local win-x64 self-contained publish works: 211 MB, of which about 100 MB is SkiaSharp and HarfBuzz native `.pdb` symbols. The published worker self-test passes |
 
 ## S0 — Skeleton, CI, and fixtures (2026-10-21)
@@ -383,8 +383,8 @@ CI at `62a2efe` (run 41327508609) passed on Windows x64, Linux x64, and macOS ar
   - a link from page 2 to page 1
 - **`GlyphProbeTests`:** explicit-only tests for the v2 question.
 
-### Evidence (Windows, Release; CI pending)
-61 tests pass, 22 of them new, and the local CI sequence passes: locked restore, Release build with 0 warnings, tests, fixture generation, and worker self-test.
+### Evidence
+CI at `29ed037` (run 41338226605) passed on Windows x64, Linux x64, and macOS arm64: locked restore, Release build, tests, fixture generation, and worker self-test. 61 tests pass, 22 of them new; the three probe tests are explicit-only and were run by hand on Windows. All 10 fixtures, including the qpdf-written `canary-document-level.pdf`, are byte-identical on the three OSes.
 - **Every canary fixture**, redacted at its manifest target, loses every canary from page text, from the decoded bytes, and from attachments. The exception is CANARY-03, which by design stays on page 2, where its shared form XObject is still used. The verifier reports that as a warning.
 - **Unaffected pages keep their text.** Output is byte-identical across runs.
 - **Negative controls:** each must be rejected, by the check meant for it:
@@ -444,6 +444,5 @@ CI at `62a2efe` (run 41327508609) passed on Windows x64, Linux x64, and macOS ar
 37. **The spike runs redaction in-process; the product must run it in the worker.** It parses untrusted files with PDFium and qpdf, and on Linux and macOS a qpdf C++ exception ends the process (finding 28). Milestone 1 needs worker messages for redact and verify.
 
 ### Still open for S5
-- CI on all three OSes, including whether the qpdf-written fixture is byte-identical across them
 - ADR-0006, v1 redaction method and verification, from these findings
 - moving redaction into the worker
