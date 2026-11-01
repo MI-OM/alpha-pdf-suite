@@ -53,3 +53,9 @@ public readonly record struct PixelRegion(int Left, int Top, int Width, int Heig
 
 /// <summary>One line of page text and its bounds in points, measured from the page's top-left corner.</summary>
 public sealed record TextLine(string Text, double Left, double Top, double Right, double Bottom);
+
+/// <summary>A rectangle on a page in points, measured from the page's top-left corner.</summary>
+public readonly record struct PageRect(double Left, double Top, double Right, double Bottom)
+{
+    public bool Contains(double x, double y) => x >= Left && x <= Right && y >= Top && y <= Bottom;
+}

@@ -180,6 +180,13 @@ internal static unsafe partial class PdfiumNative
     internal static partial int FPDFText_GetText(nint textPage, int startIndex, int count, char* result);
 
     [LibraryImport(Library)]
+    internal static partial uint FPDFText_GetUnicode(nint textPage, int index);
+
+    // Note the argument order: left, right, bottom, top (PDF space, origin bottom-left).
+    [LibraryImport(Library)]
+    internal static partial int FPDFText_GetCharBox(nint textPage, int index, double* left, double* right, double* bottom, double* top);
+
+    [LibraryImport(Library)]
     internal static partial int FPDFText_CountRects(nint textPage, int startIndex, int count);
 
     [LibraryImport(Library)]
@@ -214,6 +221,49 @@ internal static unsafe partial class PdfiumNative
     // fpdf_save.h
     [LibraryImport(Library)]
     internal static partial int FPDF_SaveAsCopy(nint document, FPDF_FILEWRITE* fileWrite, CULong flags);
+
+    // Text objects and fonts, for the glyph-level redaction probe (spike S5). PDFium can set a
+    // text object's character codes but has no call to read them.
+    [LibraryImport(Library)]
+    internal static partial nint FPDFText_GetTextObject(nint textPage, int index);
+
+    [LibraryImport(Library)]
+    internal static partial int FPDFText_GetCharOrigin(nint textPage, int index, double* x, double* y);
+
+    [LibraryImport(Library)]
+    internal static partial nint FPDFTextObj_GetFont(nint textObject);
+
+    [LibraryImport(Library)]
+    internal static partial int FPDFTextObj_GetFontSize(nint textObject, float* size);
+
+    [LibraryImport(Library)]
+    internal static partial int FPDFPageObj_GetMatrix(nint pageObject, FS_MATRIX* matrix);
+
+    [LibraryImport(Library)]
+    internal static partial int FPDFPageObj_SetMatrix(nint pageObject, FS_MATRIX* matrix);
+
+    [LibraryImport(Library)]
+    internal static partial int FPDFFont_GetIsEmbedded(nint font);
+
+    // Returns the name's length including the terminating NUL; writes only if the buffer is long enough.
+    [LibraryImport(Library)]
+    internal static partial nuint FPDFFont_GetBaseFontName(nint font, byte* buffer, nuint length);
+
+    internal const int FPDF_FONT_TRUETYPE = 2;
+
+    [LibraryImport(Library)]
+    internal static partial nint FPDFText_LoadFont(nint document, byte* data, uint size, int fontType, int cid);
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct FS_MATRIX
+{
+    public float A;
+    public float B;
+    public float C;
+    public float D;
+    public float E;
+    public float F;
 }
 
 [StructLayout(LayoutKind.Sequential)]

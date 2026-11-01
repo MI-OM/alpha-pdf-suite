@@ -156,6 +156,23 @@ public sealed class FixtureTests
     }
 
     [Fact]
+    public void CanaryDocumentLevel_HasEveryCanaryWhereItShouldBe()
+    {
+        byte[] bytes = Fixtures.CanaryDocumentLevel();
+        byte[] inspectable = PdfSuite.Pdf.Qpdf.QpdfStructure.Rewrite(bytes, inspectable: true);
+
+        foreach (string canary in new[] { "CANARY-08", "CANARY-09", "CANARY-10", "CANARY-11", "CANARY-12", "CANARY-13" })
+        {
+            Assert.True(PdfSuite.Pdf.Qpdf.PdfText.Contains(inspectable, canary), $"{canary} is missing from the fixture.");
+        }
+
+        using var document = (PdfiumDocument)_engine.Open(bytes);
+        Assert.Equal("CANARY-08", document.GetMetadata("Title"));
+        Assert.True(document.CountObjects(0, PdfiumObjectKind.Path) > 100, "CANARY-07 should be drawn as many rectangles.");
+        Assert.DoesNotContain("CANARY-07", document.GetPageText(0));
+    }
+
+    [Fact]
     public void Manifest_EveryCanaryHasARedactionTarget()
     {
         foreach (FixtureInfo info in Fixtures.All.Select(f => f.Info).Where(i => i.Canary is not null))
@@ -176,11 +193,12 @@ public sealed class FixtureTests
     }
 
     // Each fixture is generated twice. The pair covers full saves, an embedded file's
-    // own /CreationDate, an incremental update with two trailers, and imported chunks.
+    // own /CreationDate, an incremental update with two trailers, imported chunks, and a qpdf rewrite.
     [Theory]
     [InlineData("canary-text.pdf")]
     [InlineData("canary-attachment.pdf")]
     [InlineData("canary-incremental.pdf")]
+    [InlineData("canary-document-level.pdf")]
     [InlineData("simple-text.pdf")]
     public void Generation_IsByteForByteReproducible(string file)
     {

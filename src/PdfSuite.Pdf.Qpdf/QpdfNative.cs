@@ -16,6 +16,7 @@ internal static unsafe partial class QpdfNative
     internal const int QPDF_ERRORS = 1 << 1;
 
     // qpdf_stream_decode_level_e.
+    internal const int qpdf_dl_generalized = 1;
     internal const int qpdf_dl_all = 3;
 
     // qpdf_object_stream_e.
@@ -91,6 +92,97 @@ internal static unsafe partial class QpdfNative
 
     [LibraryImport(Library)]
     internal static partial int qpdf_has_error(nint qpdf);
+
+    [LibraryImport(Library)]
+    internal static partial uint qpdf_get_root(nint qpdf);
+
+    [LibraryImport(Library)]
+    internal static partial int qpdf_get_num_pages(nint qpdf);
+
+    [LibraryImport(Library)]
+    internal static partial uint qpdf_get_page_n(nint qpdf, nuint zeroBasedIndex);
+
+    [LibraryImport(Library, StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial int qpdf_oh_has_key(nint qpdf, uint dictionary, string key);
+
+    [LibraryImport(Library)]
+    internal static partial int qpdf_oh_is_array(nint qpdf, uint handle);
+
+    [LibraryImport(Library)]
+    internal static partial int qpdf_oh_get_array_n_items(nint qpdf, uint array);
+
+    [LibraryImport(Library)]
+    internal static partial uint qpdf_oh_get_array_item(nint qpdf, uint array, int index);
+
+    [LibraryImport(Library)]
+    internal static partial uint qpdf_oh_new_array(nint qpdf);
+
+    [LibraryImport(Library)]
+    internal static partial void qpdf_oh_append_item(nint qpdf, uint array, uint item);
+
+    [LibraryImport(Library, StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial uint qpdf_oh_new_name(nint qpdf, string name);
+
+    [LibraryImport(Library)]
+    internal static partial uint qpdf_oh_new_integer(nint qpdf, long value);
+
+    [LibraryImport(Library)]
+    internal static partial uint qpdf_oh_new_null(nint qpdf);
+
+    [LibraryImport(Library)]
+    internal static partial uint qpdf_oh_new_stream(nint qpdf);
+
+    [LibraryImport(Library)]
+    internal static partial void qpdf_oh_replace_stream_data(nint qpdf, uint stream, byte* data, nuint length, uint filter, uint decodeParms);
+
+    [LibraryImport(Library)]
+    internal static partial uint qpdf_oh_get_dict(nint qpdf, uint stream);
+
+    // Returns a null object, not an error, for an object number that is not in the file.
+    [LibraryImport(Library)]
+    internal static partial uint qpdf_get_object_by_id(nint qpdf, int objectId, int generation);
+
+    [LibraryImport(Library)]
+    internal static partial int qpdf_oh_get_object_id(nint qpdf, uint handle);
+
+    [LibraryImport(Library)]
+    internal static partial int qpdf_oh_is_null(nint qpdf, uint handle);
+
+    [LibraryImport(Library)]
+    internal static partial int qpdf_oh_is_stream(nint qpdf, uint handle);
+
+    [LibraryImport(Library)]
+    internal static partial int qpdf_oh_is_indirect(nint qpdf, uint handle);
+
+    [LibraryImport(Library, StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial int qpdf_oh_is_name_and_equals(nint qpdf, uint handle, string name);
+
+    [LibraryImport(Library)]
+    internal static partial int qpdf_oh_get_int_value_as_int(nint qpdf, uint handle);
+
+    // Returns bytes owned by qpdf, valid until the next call on this handle.
+    [LibraryImport(Library)]
+    internal static partial byte* qpdf_oh_get_binary_string_value(nint qpdf, uint handle, nuint* length);
+
+    // Only one dictionary can be iterated at a time; each key is valid until the next call.
+    [LibraryImport(Library)]
+    internal static partial void qpdf_oh_begin_dict_key_iter(nint qpdf, uint dictionary);
+
+    [LibraryImport(Library)]
+    internal static partial int qpdf_oh_dict_more_keys(nint qpdf);
+
+    [LibraryImport(Library)]
+    internal static partial nint qpdf_oh_dict_next_key(nint qpdf);
+
+    // The buffer is allocated by qpdf and must be released with qpdf_oh_free_buffer.
+    [LibraryImport(Library)]
+    internal static partial int qpdf_oh_get_stream_data(nint qpdf, uint stream, int decodeLevel, int* filtered, byte** buffer, nuint* length);
+
+    [LibraryImport(Library)]
+    internal static partial void qpdf_oh_free_buffer(byte** buffer);
+
+    [LibraryImport(Library)]
+    internal static partial void qpdf_set_preserve_unreferenced_objects(nint qpdf, int value);
 
     [LibraryImport(Library)]
     internal static partial int qpdf_init_write_memory(nint qpdf);

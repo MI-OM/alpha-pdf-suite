@@ -149,6 +149,66 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
         }
     }
 
+    /// <summary>
+    /// The runs of text whose characters sit inside <paramref name="area"/> (character centres
+    /// inside the rectangle), split wherever a character outside it or a line break intervenes.
+    /// Redaction uses this to learn what text an area covers before it is removed.
+    /// </summary>
+    public IReadOnlyList<string> GetTextInArea(int pageIndex, PageRect area)
+    {
+        lock (PdfiumLibrary.Sync)
+        {
+            double pageHeight = GetPageSize(pageIndex).Height;
+            nint textPage = PdfiumNative.FPDFText_LoadPage(GetLoadedPage(pageIndex));
+            if (textPage == 0)
+            {
+                throw new InvalidOperationException($"PDFium could not extract text from page {pageIndex}.");
+            }
+
+            try
+            {
+                var runs = new List<string>();
+                var current = new System.Text.StringBuilder();
+                int count = PdfiumNative.FPDFText_CountChars(textPage);
+                for (int i = 0; i <= count; i++)
+                {
+                    bool inside = false;
+                    char c = '\0';
+                    if (i < count)
+                    {
+                        c = (char)PdfiumNative.FPDFText_GetUnicode(textPage, i);
+                        double left, right, bottom, top;
+                        if (c is not ('\r' or '\n') && PdfiumNative.FPDFText_GetCharBox(textPage, i, &left, &right, &bottom, &top) != 0)
+                        {
+                            inside = area.Contains((left + right) / 2, pageHeight - ((top + bottom) / 2));
+                        }
+                    }
+
+                    if (inside)
+                    {
+                        current.Append(c);
+                    }
+                    else if (current.Length > 0)
+                    {
+                        string run = current.ToString().Trim();
+                        if (run.Count(ch => !char.IsWhiteSpace(ch)) >= 2)
+                        {
+                            runs.Add(run);
+                        }
+
+                        current.Clear();
+                    }
+                }
+
+                return runs;
+            }
+            finally
+            {
+                PdfiumNative.FPDFText_ClosePage(textPage);
+            }
+        }
+    }
+
     /// <summary>Union of the text rectangles of a character range, converted to top-left-origin points.</summary>
     private static (double Left, double Top, double Right, double Bottom)? TryGetBounds(nint textPage, int start, int count, double pageHeight)
     {
@@ -221,6 +281,16 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
             nint page = GetLoadedPage(pageIndex);
             PdfiumNative.FPDF_RenderPage(
                 deviceContext, page, x, y, width, height, rotate, PdfiumNative.FPDF_ANNOT | PdfiumNative.FPDF_PRINTING);
+        }
+    }
+
+    /// <summary>Counts the top-level page objects of every kind.</summary>
+    public int CountObjects(int pageIndex)
+    {
+        lock (PdfiumLibrary.Sync)
+        {
+            ThrowIfInvalidPage(pageIndex);
+            return PdfiumNative.FPDFPage_CountObjects(GetLoadedPage(pageIndex));
         }
     }
 

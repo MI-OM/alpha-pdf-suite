@@ -6,6 +6,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PdfSuite.Pdf.Pdfium\PdfSuite.Pdf.Pdfium.csproj" />
+    <!-- qpdf writes the document-level structures PDFium cannot (metadata, bookmarks, layers). -->
+    <ProjectReference Include="..\..\src\PdfSuite.Pdf.Qpdf\PdfSuite.Pdf.Qpdf.csproj" />
   </ItemGroup>
 
 </Project>

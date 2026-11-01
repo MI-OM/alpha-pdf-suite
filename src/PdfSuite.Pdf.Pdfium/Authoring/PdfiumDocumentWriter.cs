@@ -139,15 +139,35 @@ public sealed unsafe class PdfiumDocumentWriter : IDisposable
     }
 
     /// <summary>Appends every page of <paramref name="source"/> to the end of this document.</summary>
-    public void ImportAllPages(PdfiumDocumentWriter source)
+    public void ImportAllPages(PdfiumDocumentWriter source) => ImportPages(source, null);
+
+    /// <summary>
+    /// Appends pages of <paramref name="source"/> to the end of this document.
+    /// <paramref name="pageRange"/> uses 1-based numbers, such as "1,3,5-7"; null means all pages.
+    /// </summary>
+    public void ImportPages(PdfiumDocumentWriter source, string? pageRange)
     {
         lock (PdfiumLibrary.Sync)
         {
             int index = PdfiumNative.FPDF_GetPageCount(Handle);
-            if (PdfiumNative.FPDF_ImportPages(Handle, source.Handle, null, index) == 0)
+            if (PdfiumNative.FPDF_ImportPages(Handle, source.Handle, pageRange, index) == 0)
             {
                 throw new InvalidOperationException("PDFium could not import the pages.");
             }
+        }
+    }
+
+    public PageSize GetPageSize(int pageIndex)
+    {
+        lock (PdfiumLibrary.Sync)
+        {
+            FS_SIZEF size;
+            if (PdfiumNative.FPDF_GetPageSizeByIndexF(Handle, pageIndex, &size) == 0)
+            {
+                throw new InvalidOperationException($"PDFium could not read the size of page {pageIndex}.");
+            }
+
+            return new PageSize(size.Width, size.Height);
         }
     }
 

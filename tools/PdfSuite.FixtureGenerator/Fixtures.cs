@@ -1,5 +1,6 @@
 using System.Text;
 using PdfSuite.Pdf.Pdfium.Authoring;
+using PdfSuite.Pdf.Qpdf;
 
 namespace PdfSuite.FixtureGenerator;
 
@@ -14,7 +15,8 @@ public sealed record FixtureInfo(
     string? CanaryLocation = null,
     int? RedactPage = null,
     double[]? RedactRect = null,
-    int[]? CanaryRemainsOnPages = null)
+    int[]? CanaryRemainsOnPages = null,
+    string[]? DocumentLevelCanaries = null)
 {
     public string Provenance => Fixtures.Provenance;
 }
@@ -24,8 +26,8 @@ public sealed record Fixture(FixtureInfo Info, Func<byte[]> Generate);
 /// <summary>
 /// Synthetic test documents built only with PDFium, so they carry no third-party content.
 /// Output is byte-for-byte reproducible (see <see cref="Reproducible"/>).
-/// The canary set covers the locations PDFium can write. Metadata, JavaScript, bookmark,
-/// hidden-layer, vector-art and password fixtures need qpdf and arrive with spike items S4 and S5.
+/// Document-level canaries (metadata, JavaScript, bookmarks, structure tree, hidden layer) are added
+/// with qpdf, which writes what PDFium cannot.
 /// </summary>
 public static class Fixtures
 {
@@ -77,6 +79,12 @@ public static class Fixtures
         new(new(
             "canary-attachment.pdf", "Canary inside an embedded file. Redacting any area must remove attachments.",
             "CANARY-05", "attachment (document level)", 0, [70, 596, 300, 616]), CanaryAttachment),
+        new(new(
+            "canary-document-level.pdf",
+            "CANARY-07 drawn as vector rectangles (no text), plus canaries in the Info title, XMP metadata, a JavaScript open action, a bookmark, structure-tree alt text, and a hidden layer. Page 2 links to page 1. Redacting the vector art must remove every one.",
+            "CANARY-07", "vector art", 0, [70, 397, 234, 424],
+            DocumentLevelCanaries: ["CANARY-08", "CANARY-09", "CANARY-10", "CANARY-11", "CANARY-12", "CANARY-13"]),
+            CanaryDocumentLevel),
         new(new(
             "canary-incremental.pdf",
             "Canary in the first revision only; an incremental update replaces it with REVISED.",
@@ -240,6 +248,140 @@ public static class Fixtures
         return Finish(revised, PdfSaveMode.Incremental);
     }
 
+    /// <summary>
+    /// Vector art plus document-level content that PDFium cannot write, added with qpdf. Every
+    /// canary sits where a careless redaction would leave it.
+    /// </summary>
+    public static byte[] CanaryDocumentLevel()
+    {
+        byte[] basePdf;
+        using (var document = PdfiumDocumentWriter.CreateNew())
+        {
+            using (var page = AddCanaryPage(document, "Canary fixture: document-level content"))
+            {
+                AddPixelTextAsRectangles(page, "CANARY-07", x: 72, y: 400, scale: 3);
+            }
+
+            using (var second = document.AddPage(LetterWidth, LetterHeight))
+            {
+                second.AddText("Second page, not redacted", 72, 720, 16);
+            }
+
+            basePdf = Finish(document);
+        }
+
+        using var edit = QpdfEdit.Open(basePdf);
+        QpdfObject Name(string value) => edit.NewName(value);
+        QpdfObject Text(string value) => edit.NewText(value);
+        QpdfObject Dictionary(params (string Key, QpdfObject Value)[] entries)
+        {
+            QpdfObject dictionary = edit.NewDictionary();
+            foreach (var (key, value) in entries)
+            {
+                edit.Set(dictionary, key, value);
+            }
+
+            return dictionary;
+        }
+
+        QpdfObject Array(params QpdfObject[] items)
+        {
+            QpdfObject array = edit.NewArray();
+            foreach (QpdfObject item in items)
+            {
+                edit.Append(array, item);
+            }
+
+            return array;
+        }
+
+        // Document information (replacing PDFium's, which holds only a creation date).
+        edit.Set(edit.Trailer, "/Info", edit.MakeIndirect(Dictionary(("/Title", Text("CANARY-08")))));
+
+        // XMP metadata.
+        QpdfObject xmp = edit.NewStream(Encoding.UTF8.GetBytes(
+            "<?xpacket begin='' id='W5M0MpCehiHzreSzNTczkc9d'?><x:xmpmeta xmlns:x='adobe:ns:meta/'>"
+            + "<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'><rdf:Description rdf:about='' "
+            + "xmlns:dc='http://purl.org/dc/elements/1.1/'><dc:title><rdf:Alt><rdf:li xml:lang='x-default'>CANARY-09"
+            + "</rdf:li></rdf:Alt></dc:title></rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end='w'?>"));
+        edit.Set(edit.StreamDictionary(xmp), "/Type", Name("/Metadata"));
+        edit.Set(edit.StreamDictionary(xmp), "/Subtype", Name("/XML"));
+        edit.Set(edit.Root, "/Metadata", xmp);
+
+        // A JavaScript action run when the document opens.
+        edit.Set(edit.Root, "/OpenAction", Dictionary(("/S", Name("/JavaScript")), ("/JS", Text("app.alert('CANARY-10');"))));
+
+        // A bookmark to page 1.
+        QpdfObject outlines = edit.MakeIndirect(Dictionary(("/Type", Name("/Outlines")), ("/Count", edit.NewInteger(1))));
+        QpdfObject bookmark = edit.MakeIndirect(Dictionary(
+            ("/Title", Text("CANARY-11")), ("/Parent", outlines), ("/Dest", Array(edit.Page(0), Name("/Fit")))));
+        edit.Set(outlines, "/First", bookmark);
+        edit.Set(outlines, "/Last", bookmark);
+        edit.Set(edit.Root, "/Outlines", outlines);
+
+        // Structure tree with alternate text, as a tagged PDF has for figures.
+        QpdfObject structure = edit.MakeIndirect(Dictionary(("/Type", Name("/StructTreeRoot"))));
+        QpdfObject figure = edit.MakeIndirect(Dictionary(
+            ("/Type", Name("/StructElem")), ("/S", Name("/Figure")), ("/Alt", Text("CANARY-12")), ("/P", structure)));
+        edit.Set(structure, "/K", Array(figure));
+        edit.Set(edit.Root, "/StructTreeRoot", structure);
+
+        // A layer that is off by default, holding text drawn on page 1: present in the file, not shown.
+        QpdfObject layer = edit.MakeIndirect(Dictionary(("/Type", Name("/OCG")), ("/Name", Text("Hidden layer"))));
+        edit.Set(edit.Root, "/OCProperties", Dictionary(
+            ("/OCGs", Array(layer)), ("/D", Dictionary(("/OFF", Array(layer)), ("/Order", Array(layer))))));
+        QpdfObject firstPage = edit.Page(0);
+        QpdfObject resources = edit.Get(firstPage, "/Resources");
+        if (!edit.IsDictionary(resources))
+        {
+            resources = edit.NewDictionary();
+            edit.Set(firstPage, "/Resources", resources);
+        }
+
+        edit.Set(resources, "/Properties", Dictionary(("/HiddenLayer", layer)));
+        QpdfObject fonts = edit.Get(resources, "/Font");
+        if (!edit.IsDictionary(fonts))
+        {
+            fonts = edit.NewDictionary();
+            edit.Set(resources, "/Font", fonts);
+        }
+
+        edit.Set(fonts, "/CanaryFont", Dictionary(("/Type", Name("/Font")), ("/Subtype", Name("/Type1")), ("/BaseFont", Name("/Helvetica"))));
+        QpdfObject hidden = edit.NewStream(Encoding.ASCII.GetBytes(
+            "q /OC /HiddenLayer BDC BT /CanaryFont 12 Tf 72 360 Td (CANARY-13) Tj ET EMC Q"));
+        QpdfObject contents = edit.Get(firstPage, "/Contents");
+        QpdfObject allContents = edit.IsArray(contents) ? Array([.. edit.Items(contents), hidden]) : Array(contents, hidden);
+        edit.Set(firstPage, "/Contents", allContents);
+
+        // A link on page 2 back to page 1. Copying page 2 on its own must not bring page 1 with it.
+        QpdfObject link = Dictionary(
+            ("/Type", Name("/Annot")), ("/Subtype", Name("/Link")),
+            ("/Rect", Array(edit.NewInteger(72), edit.NewInteger(700), edit.NewInteger(300), edit.NewInteger(730))),
+            ("/Dest", Array(firstPage, Name("/Fit"))));
+        edit.Set(edit.Page(1), "/Annots", Array(edit.MakeIndirect(link)));
+
+        return edit.Save();
+    }
+
+    /// <summary>Draws pixel-font text as filled rectangles: visible like text, but no text objects.</summary>
+    private static void AddPixelTextAsRectangles(PdfiumPageWriter page, string text, double x, double y, double scale)
+    {
+        for (int i = 0; i < text.Length; i++)
+        {
+            string[] glyph = PixelFont[text[i]];
+            for (int row = 0; row < 7; row++)
+            {
+                for (int column = 0; column < 5; column++)
+                {
+                    if (glyph[row][column] == '#')
+                    {
+                        page.AddRectangle(x + (((i * 6) + column) * scale), y + ((6 - row) * scale), scale, scale, 0, 0, 0);
+                    }
+                }
+            }
+        }
+    }
+
     private static byte[] Finish(PdfiumDocumentWriter document, PdfSaveMode mode = PdfSaveMode.Full) =>
         Reproducible.Normalize(document.ToArray(mode));
 
@@ -290,6 +432,7 @@ public static class Fixtures
         ['-'] = ["     ", "     ", "     ", "#####", "     ", "     ", "     "],
         ['0'] = [" ### ", "#   #", "#  ##", "# # #", "##  #", "#   #", " ### "],
         ['2'] = [" ### ", "#   #", "    #", "   # ", "  #  ", " #   ", "#####"],
+        ['7'] = ["#####", "    #", "   # ", "  #  ", " #   ", " #   ", " #   "],
     };
 
     /// <summary>Black pixel-font text centred on white, each font pixel drawn as a scale × scale block.</summary>

@@ -56,7 +56,8 @@ Options: `--tile 256|512`, `--software`, `--out results.json`. Results go to `ar
 |---|---|
 | `src/PdfSuite.Pdf.Abstractions` | Engine-neutral interfaces used by the application layers |
 | `src/PdfSuite.Pdf.Pdfium` | PDFium bindings, the engine adapter, and an authoring API |
-| `src/PdfSuite.Pdf.Qpdf` | qpdf bindings: AES-256 encryption, metadata, full rewrites (spike S4) |
+| `src/PdfSuite.Pdf.Qpdf` | qpdf bindings: AES-256 encryption, metadata, full rewrites (spike S4), and object-level editing |
+| `src/PdfSuite.Pdf.Redaction` | Redaction by rebuilding the document, and an independent verifier (spike S5) |
 | `src/PdfSuite.Pdf.Remote` | The app-to-worker protocol, worker client, crash-restarting document session, and Windows Job Object |
 | `src/PdfSuite.Pdf.Worker` | The out-of-process engine host (`--serve`), plus `--self-test` for CI |
 | `src/PdfSuite.App` | The Avalonia desktop shell: tiled document view and S1 benchmark |

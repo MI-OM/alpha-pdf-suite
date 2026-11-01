@@ -9,6 +9,11 @@
     <ProjectReference Include="..\PdfSuite.Pdf.Abstractions\PdfSuite.Pdf.Abstractions.csproj" />
   </ItemGroup>
 
+  <!-- The glyph-level redaction probe drives PDFium's API directly. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="PdfSuite.Spike.Tests" />
+  </ItemGroup>
+
   <!-- Prebuilt non-V8 PDFium binaries. Each package carries runtimes/<rid>/native for its OS. -->
   <ItemGroup>
     <PackageReference Include="bblanchon.PDFium.Win32" />

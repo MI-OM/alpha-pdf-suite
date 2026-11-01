@@ -9,7 +9,7 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
 | S2 Document-text accessibility | Built; verified on Windows through UI Automation | **Promising.** The tree and keyboard reading behave as designed, with one focus event per key, and there is no measurable frame-pacing cost (A/B benchmark). Real screen-reader checks (NVDA, Narrator) are pending with the maintainer; Orca and VoiceOver need Linux and a Mac |
 | S3 Printing | Windows done; macOS and Linux planned and estimated | **Pass on Windows.** The worker prints with exact page geometry and vector output, but slowly: about 1 s and 256 KB per page with Print to PDF. macOS and Linux have a researched plan and estimates, not yet a proof of concept |
 | S4 qpdf from .NET | Done | **Pass on all three OSes** (CI at `62a2efe`, run 41327508609): AES-256 encryption, decryption, Unicode metadata, and full rewrites, all checked with PDFium as an independent reader |
-| S5 Redaction method | Not started | — |
+| S5 Redaction method | Built; verified locally on Windows, CI pending | **Pass locally.** No canary survives in any of the 7 canary fixtures (13 canaries), and all 7 negative controls are rejected, each by the check meant for it. Glyph-level probe: **yes** for the three fonts tried, with caveats for real-world fonts (finding 36). Still to do: run it in the worker, and write ADR-0006 |
 | S6 Packaging | Workflow scaffolded | Not started. A local win-x64 self-contained publish works: 211 MB, of which about 100 MB is SkiaSharp and HarfBuzz native `.pdb` symbols. The published worker self-test passes |
 
 ## S0 — Skeleton, CI, and fixtures (2026-10-21)
@@ -343,3 +343,107 @@ CI at `62a2efe` (run 41327508609) passed on Windows x64, Linux x64, and macOS ar
 29. **PDFium writes text as hex strings in `TJ` arrays,** for example `[<43414E4152592D3031>] TJ`. A literal byte search for a canary therefore never matches, and a leak check built on one passes vacuously.
     - `PdfText.Contains` searches all common forms, and every leak test now needs a negative control that proves the search can fail.
     - Font encodings that remap codes are still not covered; S5's verifier adds text extraction for those.
+
+## S5 — Redaction method and verifier (2026-11-01)
+
+### Built
+- **`PdfSuite.Pdf.Redaction`:**
+  - **`Redactor`** builds a new document and never edits the source:
+    - Each page with an area is rendered at 216 dpi, annotations included, and the areas are filled black, rounding outwards. The page becomes a single image.
+    - Every other page is copied unchanged, in runs.
+    - qpdf then applies the scrub policy and writes the file once, as a single revision:
+      - the catalog keeps only `/Type` and `/Pages`
+      - `/Info` and the file ID are removed
+      - page actions, page metadata, private application data and beads are removed from every page
+      - annotation actions, page links, reply links, and links that lead outside the output are removed
+    - The result goes through the verifier, and a file that fails is never returned.
+  - **`RedactionVerifier`** is public and does not trust how the file was made. It runs 7 checks:
+    - single revision, with nothing after the last `%%EOF`
+    - pages match the source in number and size
+    - no document-level content
+    - no page objects outside the page tree
+    - each redacted page is exactly one image, with no annotations
+    - text removed
+    - areas render solid black
+  - **How the text check works:**
+    - The secrets are the source's text under each area, plus any extra terms the caller gives.
+    - Each secret is looked for in PDFium's text extraction of the output.
+    - It is also looked for in every string, every content-stream string operand, and every other stream in the file. Unreferenced objects are included, through a qpdf rewrite that keeps them.
+  - **`ContentStrings`**, a small content-stream lexer: literal and hex strings, comments, and inline images skipped.
+- **qpdf:** `QpdfEdit`, an object-level editor (also used by the fixture generator), with `OpenEverything`, `AllObjects`, dictionary keys, string and stream reads, and stream replacement.
+- **PDFium:**
+  - `GetTextInArea`: the text runs whose character centres are inside a rectangle
+  - page import by range
+  - page sizes on the writer
+  - a total object count
+  - text-object and font bindings for the probe
+- **Fixture `canary-document-level.pdf`:**
+  - CANARY-07 drawn as vector rectangles, with no text
+  - canaries in the Info title (08), XMP metadata (09), a JavaScript open action (10), a bookmark (11), structure-tree alt text (12), and a hidden layer (13)
+  - a link from page 2 to page 1
+- **`GlyphProbeTests`:** explicit-only tests for the v2 question.
+
+### Evidence (Windows, Release; CI pending)
+61 tests pass, 22 of them new, and the local CI sequence passes: locked restore, Release build with 0 warnings, tests, fixture generation, and worker self-test.
+- **Every canary fixture**, redacted at its manifest target, loses every canary from page text, from the decoded bytes, and from attachments. The exception is CANARY-03, which by design stays on page 2, where its shared form XObject is still used. The verifier reports that as a warning.
+- **Unaffected pages keep their text.** Output is byte-identical across runs.
+- **Negative controls:** each must be rejected, by the check meant for it:
+
+| Control | Rejected by |
+|---|---|
+| Black box drawn over the text, full save | text removed; redacted page is one image (and coverage passes, as it should) |
+| Text object deleted and box drawn, saved incrementally | single revision. The current revision is clean, but cutting at the first `%%EOF` gives back the original |
+| A correct redaction, then an incremental update | single revision, and nothing else |
+| A correct redaction, then the canary set as `/Title` | document-level content; text removed |
+| A correct redaction, then a note annotation with the canary | redacted page is one image; text removed |
+| A correct redaction, then a link to a page outside the page tree | stray pages |
+| A correct redaction, checked against an area that was never filled | areas covered |
+
+- **PDF syntax is not reported as text:** "Page", "Type", "Resources", "Tf", "Do", "12" and "0" are all reported absent from a correct redaction.
+- **Cost:**
+  - Redacting 2 pages of the 2,000-page fixture takes 5.5 s: 0.8 s to rebuild and scrub, and 4.7 s to verify. The output grows from 4.9 MB to 6.0 MB.
+  - A one-page text fixture grows from 1.3 KB to 229 KB.
+
+### Findings
+30. **The rebuild method held on every canary location in the plan,** with nothing found by either reader.
+    - Rendering costs the redacted pages their text, links and sharpness. Each such page adds about 230–560 KB in these fixtures, more where it has images or colour.
+    - UI copy must say this before the user applies a redaction (`docs/04-UI-COPY-AND-PRODUCT-RULES.md`).
+31. **A raw byte search cannot verify redaction: it matches PDF syntax.**
+    - A redacted "Page" would always be found in `/Type /Page`, and "12" in `12 Tf`. Decoded image data would match short secrets by chance.
+    - So the verifier searches text-bearing places only: strings, content-stream string operands, and the data of other streams such as metadata, attachments and scripts. It skips images, font programs and ICC profiles. Images are checked by rendering instead.
+    - **Known blind spots:**
+      - text held in names or in inline image data
+      - Type 3 glyph procedures, which are searched raw
+      - fonts whose codes are not their characters (for drawn text, text extraction covers this)
+32. **PDFium extracts text from hidden layers.** CANARY-13, in a layer that is off by default, comes back from `GetPageText`.
+    - That makes the verifier and `GetTextInArea` more cautious, which is right.
+    - But S2's reading elements would read hidden text aloud to screen-reader users when sighted users don't see it. Filter text by layer visibility before Milestone 1.
+33. **PDFium's page copy drops references to pages it is not copying.** A link on a kept page to a redacted page arrives with no `/Dest`. This was checked directly, because a deep copy would have brought the whole original page back.
+    - The redactor drops such links itself too, so it does not depend on PDFium's behaviour.
+    - The stray-pages check catches the failure if either safeguard is lost.
+34. **qpdf keeps the first half of an existing file ID, and PDFium's is random.** Redaction output was not reproducible until the scrub removed `/ID`, so that qpdf derives both halves from the content. The root cause is the same as finding 2.
+35. **The verifier's limits are deliberate and fail closed:**
+    - Only text with its character centre inside an area is a secret. Partly covered characters are still rendered away, but not checked.
+    - A secret that also appears on a kept page is only a warning.
+    - A secret that happens to match something on a kept page that is not page text, such as a form value, makes verification fail, and the redaction is refused.
+36. **Glyph-level probe (v2): yes, for text PDFium can map back from Unicode.**
+    - **Method:** remove "CANARY-01" from the middle of "Name: CANARY-01 Phone: 555-0100" by replacing its text object with two new ones, in the same font, size and matrix, placed at the original character origins.
+
+    | Font | Text set | Kept characters moved | Pixels changed outside the area | Ink left inside | Secret in bytes |
+    |---|---|---|---|---|---|
+    | Helvetica (standard, not embedded) | yes | 0 pt | 0 | 0 | no |
+    | Arial, embedded TrueType | yes | 0 pt | 0 | 0 | no |
+    | Arial, embedded as a CID font (Identity-H) | yes | 0 pt | 0 | 0 | no |
+
+    - **Caveats:**
+      - PDFium can set a text object's character codes (`FPDFText_SetCharcodes`) but has no call to read them. So the probe went through Unicode, and depends on the font mapping each character back to one code. That holds for these fonts, but not for fonts without a ToUnicode map, ligatures, codes that share a character, or Type 3 fonts.
+      - The test text has no kerning or character spacing (`TJ` offsets, `Tc`, `Tw`), so drift inside a kept run is untested.
+      - Images and vector art under an area need separate handling.
+    - **v2 route:** parse content streams ourselves (`ContentStrings` is a start) to get the codes and their positions, then rebuild with `FPDFText_SetCharcodes`.
+    - **Side finding:** PDFium's own simple-TrueType embedding makes `-` extract as U+00AD (soft hyphen). The verifier normalises soft hyphens and no-break spaces.
+37. **The spike runs redaction in-process; the product must run it in the worker.** It parses untrusted files with PDFium and qpdf, and on Linux and macOS a qpdf C++ exception ends the process (finding 28). Milestone 1 needs worker messages for redact and verify.
+
+### Still open for S5
+- CI on all three OSes, including whether the qpdf-written fixture is byte-identical across them
+- ADR-0006, v1 redaction method and verification, from these findings
+- moving redaction into the worker

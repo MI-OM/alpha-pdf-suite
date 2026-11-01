@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PdfSuite.Spike.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PdfSuite.Pdf.Pdfium\PdfSuite.Pdf.Pdfium.csproj" />
+    <ProjectReference Include="..\PdfSuite.Pdf.Qpdf\PdfSuite.Pdf.Qpdf.csproj" />
+  </ItemGroup>
+
+</Project>
