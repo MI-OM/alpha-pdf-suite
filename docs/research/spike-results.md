@@ -10,7 +10,7 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
 | S3 Printing | Windows done; macOS and Linux planned and estimated | **Pass on Windows.** The worker prints with exact page geometry and vector output, but slowly: about 1 s and 256 KB per page with Print to PDF. macOS and Linux have a researched plan and estimates, not yet a proof of concept |
 | S4 qpdf from .NET | Done | **Pass on all three OSes** (CI at `62a2efe`, run 41327508609): AES-256 encryption, decryption, Unicode metadata, and full rewrites, all checked with PDFium as an independent reader |
 | S5 Redaction method | Done; worker integration and ADR open | **Pass on all three OSes** (CI at `29ed037`, run 41338226605). No canary survives in any of the 7 canary fixtures (13 canaries), and all 7 negative controls are rejected, each by the check meant for it. Glyph-level probe: **yes** for the three fonts tried, with caveats for real-world fonts (finding 36). Still to do: run it in the worker, and write ADR-0006 |
-| S6 Packaging | Done; ADR-0005 open | **Pass on all three OSes** (Package workflow at `81ab077`, run 41356497705). The MSIX, DMG, AppImage and .deb each installed on a fresh runner and launched the S1 viewer, which rendered the 2,000-page fixture and loaded qpdf in the worker. Packages are NativeAOT and 18–24 MB. A first launch after installing reaches the window in 0.07–0.29 s; the AppImage takes 3.6 s. Not yet distributable: the MSIX has a test certificate, and Gatekeeper rejects the DMG, which is not notarised |
+| S6 Packaging | Done; ADR-0005 open | **Pass on all three OSes** (Package workflow at `81ab077`, run 41356497705). The MSIX, DMG, AppImage and .deb each installed on a fresh runner and launched the S1 viewer, which rendered the 2,000-page fixture and loaded qpdf in the worker. Packages are NativeAOT and 18–24 MB. Over two runs, a first launch after installing reached the window in 0.07–0.62 s and the first page in 0.15–2.4 s; the AppImage took 1.7–3.6 s to the window. Not yet distributable: the MSIX has a test certificate, and Gatekeeper rejects the DMG, which is not notarised |
 
 ## S0 — Skeleton, CI, and fixtures (2026-10-21)
 
@@ -503,19 +503,19 @@ CI at `29ed037` (run 41338226605) passed on Windows x64, Linux x64, and macOS ar
   Symbols kept out of packages: 184 MB.
 
 ### Evidence (CI)
-The Package workflow at `81ab077` (run 41356497705) passed on all three OSes. The CI workflow on the same commit (run 41356497684) also passed: 62 tests, and all 10 fixtures byte-identical across the OSes.
+The Package workflow at `81ab077` (run 41356497705) passed on all three OSes. The CI workflow on the same commit (run 41356497684) also passed: 62 tests, and all 10 fixtures byte-identical across the OSes. Both passed again at `63e874f` (runs 41357234415 and 41357234604), which gave a second set of first-launch times.
 
 **Every package installed on a fresh runner and launched.** Each launch rendered the first page of the 2,000-page fixture and loaded qpdf 12.4.2 in the worker. The first launch after installing is a cold start. Times are from process start to the window, and to the first page sharp:
 
-| Package and machine | Package | Installed | How it was installed | First launch | Warm (runs 2–3) |
+| Package and machine | Package | Installed | How it was installed | First launch, two runs | Warm (runs 2–3) |
 |---|---|---|---|---|---|
-| MSIX, Windows Server 2025 runner | 22.4 MB | 53.7 MB | Test certificate trusted, then `Add-AppxPackage`. Started through its `pdf-suite` alias, then uninstalled cleanly | 231 / 395 ms | 114–151 / 248–289 ms |
-| DMG, macOS arm64 runner | 24.1 MB | 51 MB | Mounted, and the app copied to /Applications | 285 / 1,054 ms | 109–117 / 286–339 ms |
-| .deb, bare `ubuntu:24.04` container | 18.4 MB | 55 MB | `apt install`, which pulled in 18 packages, ICU and DejaVu fonts among them. Removed cleanly | 71 / 146 ms | 54 / 128–129 ms |
-| AppImage, Ubuntu 24.04 runner | 21.6 MB | Runs in place | None: it mounted itself with FUSE | 3,561 / 3,818 ms | 180–187 / 283–290 ms |
+| MSIX, Windows Server 2025 runner | 22.4 MB | 53.7 MB | Test certificate trusted, then `Add-AppxPackage`. Started through its `pdf-suite` alias, then uninstalled cleanly | 231 / 395 ms; 399 / 736 ms | 114–151 / 248–309 ms |
+| DMG, macOS arm64 runner | 24.1 MB | 51 MB | Mounted, and the app copied to /Applications | 285 / 1,054 ms; 617 / 2,418 ms | 109–179 / 286–482 ms |
+| .deb, bare `ubuntu:24.04` container | 18.4 MB | 55 MB | `apt install`, which pulled in 18 packages, ICU and DejaVu fonts among them. Removed cleanly | 71 / 146 ms; 105 / 194 ms | 54–91 / 128–179 ms |
+| AppImage, Ubuntu 24.04 runner | 21.6 MB | Runs in place | None: it mounted itself with FUSE | 3,561 / 3,818 ms; 1,698 / 1,969 ms | 176–187 / 283–290 ms |
 
 - **macOS signing:** the installed bundle verifies (`valid on disk`, `satisfies its Designated Requirement`), with the flags `adhoc,runtime` and no team identifier. Gatekeeper's assessment: `rejected`.
-- **Published folders, in the packaging jobs.** These are not fresh machines: the files had just been written. Window / first page sharp:
+- **Published folders, in the packaging jobs** (first run at `81ab077`). These are not fresh machines: the files had just been written. Window / first page sharp:
 
 | OS | NativeAOT folder | First run | Warm | ReadyToRun folder | First run | Warm |
 |---|---|---|---|---|---|---|
@@ -529,7 +529,7 @@ The Package workflow at `81ab077` (run 41356497705) passed on all three OSes. Th
   - qpdf needs libstdc++, zlib, and GMP, through its bundled GnuTLS and Nettle.
 - **Build time:** a packaging job takes 2–3.5 minutes. Compiling both programs with NativeAOT takes 37–73 s of that.
 
-**Fixed after the run,** in the next commit, which CI has not yet run:
+**Fixed after the first run,** and confirmed by the run at `63e874f`:
 - **A false failure:** the Windows step that smoke-tests the published folders reported a failure although all six runs passed. `smoke-test.ps1` ended without setting an exit code, so the step read a stale `$LASTEXITCODE`. The step does not block, so the run still passed.
 - **Two undeclared libraries:** the .deb now also declares `libgmp10` and `libfreetype6`, which `ldd` showed are linked (finding 47).
 
@@ -561,11 +561,14 @@ The Package workflow at `81ab077` (run 41356497705) passed on all three OSes. Th
     - apt installed everything the package declares, and the app ran.
     - But `ldd` found two linked libraries the package did not declare directly. FreeType (Skia) came in through fontconfig, and GMP (qpdf's crypto) is part of every Ubuntu base image. Both are now declared.
     - So dependency lists should come from `ldd` plus the libraries loaded at run time, not from a passing install alone.
-48. **The AppImage's first launch took 3.6 s, against 0.07–0.29 s for the installed packages.**
-    - Its warm launches took 0.18 s, still about three times the .deb's 0.05 s.
+48. **The AppImage's first launch took 3.6 s and 1.7 s in two runs, against 0.07–0.62 s for the installed packages.**
+    - Its warm launches took 0.18 s, still two to three times the .deb's 0.05–0.09 s.
     - The likely cause is reading the compressed image through FUSE, cold on the first launch. That is not investigated.
     - It is the only package measurement over the PRD's 3 s target, and it is a first launch on a CI runner.
-49. **NativeAOT has the edge on every OS.** A first launch after installing reaches the first page in 0.13–1.05 s. The ReadyToRun build's first runs are 2–4.5 times slower, up to 3.3 s to the first page on macOS. This supports NativeAOT as the v1 build mode (ADR-0005).
+49. **NativeAOT has the edge on every OS.**
+    - Over two runs, a first launch after installing reached the first page in 0.15–2.4 s. The slowest was macOS, at 2.4 s in one run and 1.05 s in the other, so cold starts on CI runners vary a lot between runs.
+    - In the packaging jobs, the ReadyToRun build's first runs took 1.3–3.3 s to the first page. That is 3.6 to 12 times as long as NativeAOT in the same job.
+    - This supports NativeAOT as the v1 build mode (ADR-0005).
 
 ### Still open for S6
 - **ADR-0005,** packaging and distribution channels: build mode, formats, signing and notarisation, and locking publish restores (finding 42).
