@@ -81,7 +81,17 @@ pwsh tools/package/package-linux.ps1 -Layout artifacts/package/linux-x64-aot/app
 | `tools/PdfSuite.FixtureGenerator` | Synthetic, legally distributable test documents |
 | `tools/package` | NativeAOT publish, MSIX, DMG, AppImage and .deb packaging, and the launch smoke test (spike S6) |
 | `tests/PdfSuite.Spike.Tests` | Spike tests |
-| `docs/` | PRD, roadmap, agent playbook, UI copy, checklists, spike plan, ADRs, research, licensing |
+| `docs/` | PRD, roadmap, agent playbook, UI copy, checklists, spike plan, feature matrix, ADRs, research, licensing |
+
+## What works today
+
+`docs/07-FEATURE-MATRIX.md` lists every planned capability, its target release, and its status today, including what does not work yet.
+
+## Contributing and security
+
+Outside contributions cannot be accepted until the project licence is adopted. `CONTRIBUTING.md` (a draft) describes how contributions will work.
+
+Report security problems privately, as `SECURITY.md` describes, never in a public issue.
 
 ## Licence
 
