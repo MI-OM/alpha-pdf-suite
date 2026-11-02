@@ -2,7 +2,7 @@
 
 A free, open-source, cross-platform desktop PDF application for Windows, macOS, and Linux. It aims to be trustworthy first: verified redaction, honest signature status, offline by default, and an accessible reader. See `docs/01-PRD-AND-ARCHITECTURE.md`.
 
-> **Status: technical spike.** Nothing here is a usable application yet. The current work is the two-week go/no-go spike described in `docs/06-SPIKE-PLAN.md`; results are recorded in `docs/research/spike-results.md`.
+> **Status: technical spike, finished; decisions pending.** Nothing here is a usable application yet. The go/no-go spike in `docs/06-SPIKE-PLAN.md` has run. Its results and go/no-go outcomes are in `docs/research/spike-results.md`, and the decisions it proposes are in `docs/adr/`, waiting for review.
 >
 > "Alpha PDF Suite" is a temporary working name and will be replaced before any release.
 
@@ -81,7 +81,7 @@ pwsh tools/package/package-linux.ps1 -Layout artifacts/package/linux-x64-aot/app
 | `tools/PdfSuite.FixtureGenerator` | Synthetic, legally distributable test documents |
 | `tools/package` | NativeAOT publish, MSIX, DMG, AppImage and .deb packaging, and the launch smoke test (spike S6) |
 | `tests/PdfSuite.Spike.Tests` | Spike tests |
-| `docs/` | PRD, roadmap, agent playbook, UI copy, checklists, spike plan, research, licensing |
+| `docs/` | PRD, roadmap, agent playbook, UI copy, checklists, spike plan, ADRs, research, licensing |
 
 ## Licence
 

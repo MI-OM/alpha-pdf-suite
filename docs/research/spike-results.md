@@ -9,8 +9,41 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
 | S2 Document-text accessibility | Built; verified on Windows through UI Automation | **Promising.** The tree and keyboard reading behave as designed, with one focus event per key, and there is no measurable frame-pacing cost (A/B benchmark). Real screen-reader checks (NVDA, Narrator) are pending with the maintainer; Orca and VoiceOver need Linux and a Mac |
 | S3 Printing | Windows done; macOS and Linux planned and estimated | **Pass on Windows.** The worker prints with exact page geometry and vector output, but slowly: about 1 s and 256 KB per page with Print to PDF. macOS and Linux have a researched plan and estimates, not yet a proof of concept |
 | S4 qpdf from .NET | Done | **Pass on all three OSes** (CI at `62a2efe`, run 41327508609): AES-256 encryption, decryption, Unicode metadata, and full rewrites, all checked with PDFium as an independent reader |
-| S5 Redaction method | Done; worker integration and ADR open | **Pass on all three OSes** (CI at `29ed037`, run 41338226605). No canary survives in any of the 7 canary fixtures (13 canaries), and all 7 negative controls are rejected, each by the check meant for it. Glyph-level probe: **yes** for the three fonts tried, with caveats for real-world fonts (finding 36). Still to do: run it in the worker, and write ADR-0006 |
-| S6 Packaging | Done; ADR-0005 open | **Pass on all three OSes** (Package workflow at `81ab077`, run 41356497705). The MSIX, DMG, AppImage and .deb each installed on a fresh runner and launched the S1 viewer, which rendered the 2,000-page fixture and loaded qpdf in the worker. Packages are NativeAOT and 18–24 MB. Over two runs, a first launch after installing reached the window in 0.07–0.62 s and the first page in 0.15–2.4 s; the AppImage took 1.7–3.6 s to the window. Not yet distributable: the MSIX has a test certificate, and Gatekeeper rejects the DMG, which is not notarised |
+| S5 Redaction method | Done; worker integration open; ADR-0006 proposed | **Pass on all three OSes** (CI at `29ed037`, run 41338226605). No canary survives in any of the 7 canary fixtures (13 canaries), and all 7 negative controls are rejected, each by the check meant for it. Glyph-level probe: **yes** for the three fonts tried, with caveats for real-world fonts (finding 36). Still to do: run it in the worker, and write ADR-0006 |
+| S6 Packaging | Done; ADR-0005 proposed | **Pass on all three OSes** (Package workflow at `81ab077`, run 41356497705). The MSIX, DMG, AppImage and .deb each installed on a fresh runner and launched the S1 viewer, which rendered the 2,000-page fixture and loaded qpdf in the worker. Packages are NativeAOT and 18–24 MB. Over two runs, a first launch after installing reached the window in 0.07–0.62 s and the first page in 0.15–2.4 s; the AppImage took 1.7–3.6 s to the window. Not yet distributable: the MSIX has a test certificate, and Gatekeeper rejects the DMG, which is not notarised |
+
+## Go/no-go (2026-11-01)
+The spike ran from 2026-10-21 to 2026-11-01. This section applies the rules in spike plan §6 to each outcome. The ADRs in `docs/adr/` turn the outcomes into proposed decisions, which a maintainer accepts or changes.
+
+| Item | Outcome | Rule (spike plan §6) | Result |
+|---|---|---|---|
+| S1 Tiled rendering | Pass on Windows. The pipeline tests pass on all three OSes, and the packaged builds render on all three. Interactive measurements on Linux and macOS are not done | S1 and S2 pass: commit to Avalonia | Rendering is not a blocker. The commitment to Avalonia waits on S2 |
+| S2 Document text | Built, and verified through UI Automation on Windows. Real screen-reader checks are not done | As above. Windows only: the maintainer chooses. Fails on Windows: Qt 6 comparison | **Open.** The NVDA and Narrator checks decide it |
+| S3 Printing | Pass on Windows. Estimated 2–3 days for Linux and 2–5 days for macOS | Too costly on macOS or Linux: use the OS default handler there | Not too costly on these estimates. Build the native routes in Milestone 1, with the default handler as the fallback (ADR-0001) |
+| S4 qpdf from .NET | Pass on all three OSes | Fails: compare a PDFBox sidecar with an in-house writer | qpdf is the structural engine (ADR-0002) |
+| S5 Redaction method | Pass on all three OSes; every negative control rejected | Fails: redaction moves to v2 | The rebuild method is v1's redaction (ADR-0006) |
+| S6 Packaging | Pass on all three OSes | Fails on an OS: not supported there | Packaging blocks no platform (ADR-0005) |
+
+**Overall:**
+- **Ready for Milestone 1:** the engine, the worker, redaction and packaging.
+- **Not yet ready:** Avalonia, the one framework choice the spike was run to test. That waits only on S2: until NVDA and Narrator read document text line by line, ADR-0001 should not be accepted.
+- **No platform is declared supported yet.** PRD §6 also requires accessibility testing and native smoke tests, which are open for macOS and Linux.
+
+**Before Milestone 1** (the roadmap's Milestone 0 gate):
+- Run the S2 checklist with NVDA and Narrator (maintainer).
+- Accept, change or reject ADR-0001 to ADR-0006.
+- Decide the open questions the ADRs depend on (spike plan §9):
+  - the project licence (ADR-0004)
+  - the Apple Developer Program, and the Windows signing route (ADR-0005)
+  - the product name
+
+**Carried into Milestone 1 as work:**
+- redaction and qpdf operations in the worker (finding 37)
+- worker limits on Linux and macOS (finding 12)
+- reading order (finding 16), and hiding hidden-layer text from screen readers (finding 32)
+- proofs of concept for macOS and Linux printing
+- Orca and VoiceOver checks, and the S1 measurements on Linux and macOS
+- locked publish restores (finding 42)
 
 ## S0 — Skeleton, CI, and fixtures (2026-10-21)
 
@@ -444,7 +477,7 @@ CI at `29ed037` (run 41338226605) passed on Windows x64, Linux x64, and macOS ar
 37. **The spike runs redaction in-process; the product must run it in the worker.** It parses untrusted files with PDFium and qpdf, and on Linux and macOS a qpdf C++ exception ends the process (finding 28). Milestone 1 needs worker messages for redact and verify.
 
 ### Still open for S5
-- ADR-0006, v1 redaction method and verification, from these findings
+- ADR-0006, v1 redaction method and verification: proposed (`docs/adr/0006-v1-redaction-method.md`)
 - moving redaction into the worker
 
 ## S6 — Packaging in CI (2026-11-01)
@@ -571,7 +604,7 @@ The Package workflow at `81ab077` (run 41356497705) passed on all three OSes. Th
     - This supports NativeAOT as the v1 build mode (ADR-0005).
 
 ### Still open for S6
-- **ADR-0005,** packaging and distribution channels: build mode, formats, signing and notarisation, and locking publish restores (finding 42).
+- **ADR-0005,** packaging and distribution channels: proposed (`docs/adr/0005-packaging-and-distribution.md`). It covers the build mode, formats, signing and notarisation, and locking publish restores (finding 42).
 - **Signing:** notarisation, which needs the Apple Developer Program, and a real Windows signing route (spike plan §9).
 - **The AppImage:** its slow first launch (finding 48), and the LGPL obligations it brings (finding 45).
 - **A real Linux desktop:** the Linux packages ran under Xvfb only. A Wayland session with XWayland is still to be tried, together with the S1 Linux measurements.

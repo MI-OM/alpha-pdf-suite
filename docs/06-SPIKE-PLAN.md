@@ -1,6 +1,6 @@
 # Technical Spike Plan — Trustworthy Core v1
 
-**Status:** Planned, not started
+**Status:** Run from 2026-10-21 to 2026-11-01. Outcomes, go/no-go and open items are in `research/spike-results.md`; the proposed ADRs are in `adr/`
 **Timebox:** 10 working days
 **Owner:** Not yet assigned
 **Inputs:**
