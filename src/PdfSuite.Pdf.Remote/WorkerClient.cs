@@ -8,7 +8,10 @@ namespace PdfSuite.Pdf.Remote;
 
 public sealed record WorkerOptions(string WorkerPath)
 {
-    /// <summary>Committed-memory cap for the worker. Enforced on Windows only (see spike results).</summary>
+    /// <summary>
+    /// Memory cap for the worker. Windows and Linux refuse allocations over it, and the worker keeps
+    /// serving. macOS enforces no such limit, so there the worker is stopped if its footprint goes over.
+    /// </summary>
     public long? MemoryLimitBytes { get; init; } = 1536L * 1024 * 1024;
 
     /// <summary>A request older than this is treated as a hung worker, which is then killed.</summary>
@@ -98,6 +101,7 @@ public sealed class WorkerClient : IDisposable
     private readonly object _writeLock = new();
     private readonly ConcurrentDictionary<int, Pending> _pending = new();
     private readonly Timer _watchdog;
+    private readonly Timer? _memoryWatch;
     private int _nextRequestId;
     private volatile bool _disposed;
     private volatile bool _exited;
@@ -111,6 +115,10 @@ public sealed class WorkerClient : IDisposable
         _fromWorker = new BufferedStream(process.StandardOutput.BaseStream, 1 << 16);
         new Thread(ReadResponses) { IsBackground = true, Name = "Worker response reader" }.Start();
         _watchdog = new Timer(_ => CheckForHungRequests(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+        if (OperatingSystem.IsMacOS() && options.MemoryLimitBytes is not null)
+        {
+            _memoryWatch = new Timer(_ => CheckMemory(), null, TimeSpan.Zero, TimeSpan.FromMilliseconds(250));
+        }
     }
 
     public event Action<WorkerClient, WorkerExit>? Exited;
@@ -135,10 +143,17 @@ public sealed class WorkerClient : IDisposable
             startInfo.ArgumentList.Add("--test-commands");
         }
 
+        // Linux: the worker caps its own memory before it reads any request. Windows: the Job
+        // Object below. macOS: the client watches the worker's footprint (CheckMemory).
+        if (OperatingSystem.IsLinux() && options.MemoryLimitBytes is long limit)
+        {
+            startInfo.ArgumentList.Add("--memory-limit");
+            startInfo.ArgumentList.Add(limit.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
         Process process = Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Could not start the worker '{options.WorkerPath}'.");
 
-        // Windows only: Linux and macOS limits are not implemented yet (see spike results, S1).
         IDisposable? job = null;
         try
         {
@@ -476,13 +491,15 @@ public sealed class WorkerClient : IDisposable
         return new PayloadReader(response.Payload).ReadInt32();
     }
 
-    /// <summary>Test command: asks the worker to commit this much memory, then free it.</summary>
-    public async Task AllocateForTestAsync(int megabytes)
+    /// <summary>Test command: asks the worker to commit this much memory, hold it for a time, then free it.</summary>
+    public async Task AllocateForTestAsync(int megabytes, int holdMilliseconds = 0)
     {
         int id = NextRequestId();
         Pending pending = Register(id);
-        Span<byte> payload = stackalloc byte[4];
-        new PayloadWriter(payload).WriteInt32(megabytes);
+        Span<byte> payload = stackalloc byte[8];
+        var writer = new PayloadWriter(payload);
+        writer.WriteInt32(megabytes);
+        writer.WriteInt32(holdMilliseconds);
         Send(MessageKind.AllocateForTest, id, payload);
         using Message response = await pending.Completion.Task.ConfigureAwait(false);
         ThrowIfError(response);
@@ -510,6 +527,7 @@ public sealed class WorkerClient : IDisposable
 
         _disposed = true;
         _watchdog.Dispose();
+        _memoryWatch?.Dispose();
         try
         {
             // Closing stdin tells the worker to finish and exit.
@@ -723,6 +741,31 @@ public sealed class WorkerClient : IDisposable
         }
 
         Exited?.Invoke(this, new WorkerExit(exitCode));
+    }
+
+    // macOS enforces neither RLIMIT_DATA nor RLIMIT_AS for mapped memory, so the cap there is a
+    // check of the worker's footprint every 250 ms. It is softer than the Windows and Linux
+    // limits: the worker is stopped rather than refused one allocation, and it can overshoot
+    // between checks. A stopped worker is restarted by its session like any crash.
+    private void CheckMemory()
+    {
+        if (!OperatingSystem.IsMacOS() || _exited || _disposed || _options.MemoryLimitBytes is not long limit)
+        {
+            return;
+        }
+
+        try
+        {
+            if (MacMemoryFootprint.Of(_process.Id) is long footprint && footprint > limit)
+            {
+                _options.Log?.Invoke($"The worker used {footprint / (1024 * 1024)} MB, over its {limit / (1024 * 1024)} MB limit; stopping it.");
+                Kill();
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // The process object was disposed between the check above and reading its id.
+        }
     }
 
     private void CheckForHungRequests()

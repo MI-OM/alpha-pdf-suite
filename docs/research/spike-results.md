@@ -167,7 +167,7 @@ Machine: i5-1235U, 12 logical cores, Windows 11 x64, scaling 1.0, 1000 × 701 DI
    - The test now asserts identical pixels away from tile edges, and fewer than 1% differing in total.
 10. **Software rendering is just within budget.** p95 31.2–31.5 ms against 33 ms: frames alternate between 16.7 ms and 33 ms. Machines and VMs without GPU acceleration will be close to the limit. This needs measuring on Linux (S1) and in remote-desktop sessions.
 11. **The tile cache probably dominates app memory.** The app's working set is about 600 MB with GPU rendering, against 468 MB combined with software rendering. That fits the 384 MB tile budget plus GPU-side copies of the tiles, but this is inferred, not profiled. A smaller budget is an easy lever if memory matters more than revisiting pages.
-12. **Worker memory limits exist on Windows only.** The Job Object cap is verified by a test: a 512 MB allocation is refused under a 256 MB cap, and the worker keeps serving. No limit is applied yet on Linux or macOS. `RLIMIT_AS` is expected to conflict with the .NET runtime's large address-space reservations (not yet tested), so cgroups on Linux are the likely route; macOS is to be investigated.
+12. **Worker memory limits exist on Windows only.** (Linux and macOS limits added 2026-11-06; see "After the spike".) The Job Object cap is verified by a test: a 512 MB allocation is refused under a 256 MB cap, and the worker keeps serving. No limit is applied yet on Linux or macOS. `RLIMIT_AS` is expected to conflict with the .NET runtime's large address-space reservations (not yet tested), so cgroups on Linux are the likely route; macOS is to be investigated.
 13. **A cancelled open can leave a document open in the worker until it exits.** This is acceptable for the spike; it needs a close-on-late-arrival rule before Milestone 1. **Fixed 2026-11-06:** the client closes the document when the late answer arrives.
 14. **A .NET patch release broke CI with no code change.**
     - On 2026-10-25, .NET 10.0.14 and SDK 10.0.403 were released.
@@ -639,6 +639,23 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
 - **The finding 13 test was checked against the bug:** with the fix disabled, it failed in 3 runs out of 3, leaving 11–12 of the 30 documents open.
 - **Totals:** 71 tests pass (3 explicit probes skipped), and the Release build has 0 warnings.
 - **NativeAOT:** once the SDK was bumped (finding 50), the worker with these requests published with no warnings, and the smoke test passed.
+- **CI at `97cefbe`** (runs 42162820337 and 42162820338) passed on all three OSes, with these requests and the patched runtime.
+  - Every package was rebuilt on runtime 10.0.14. Each one passed NuGet's audit, installed on a fresh runner, and launched.
+  - Launch times were in line with S6: the Windows NativeAOT folder reached the window in about 0.1 s, warm.
+  - Two first launches were slower than in S6. The AppImage took 4.9 s to the window, its third first launch over 3 s (finding 48). The DMG took 2.8 s to the first page.
+
+### Worker memory limits on Linux and macOS (finding 12)
+- **Linux:** the worker caps its own memory with `RLIMIT_DATA` before it reads any request. The app passes the limit as `--memory-limit`.
+  - `RLIMIT_DATA` counts private writable memory as it is committed (Linux 4.7 and later). Address space that is only reserved does not count, so the .NET runtime's large reservations are not a problem. They would be under `RLIMIT_AS`, which is why S1 expected trouble there.
+  - The hard limit is lowered too, so a compromised worker cannot raise it again.
+  - An allocation over the limit fails, and the worker reports OutOfMemory and keeps serving, as on Windows.
+- **macOS:** neither limit is enforced for mapped memory there. So the client reads the worker's memory footprint (`proc_pid_rusage`, the figure Activity Monitor shows) every 250 ms, and stops the worker when it goes over.
+  - This cap is softer: the worker is stopped rather than refused one allocation, and it can overshoot between checks.
+  - Its session restarts it like any crash, and gives up after 3 restarts in 30 s.
+- **Test:** the memory-limit test now runs on every OS, with the outcome each one should have.
+  - Windows and Linux must refuse a 512 MB allocation under a 256 MB cap, then serve a 32 MB one.
+  - macOS must stop a worker that holds 768 MB.
+  - It passes on Windows. The Linux and macOS results come from CI.
 
 ### Findings
 50. **NuGet's audit stopped the NativeAOT publish: the pinned runtime has a high-severity vulnerability.**

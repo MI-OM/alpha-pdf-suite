@@ -437,10 +437,13 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
         MessageIO.Write(output, MessageKind.Ack, request.RequestId, []);
     }
 
-    // Test command: commits the requested memory page by page, so a memory limit is hit for real.
+    // Test command: commits the requested memory page by page, so a memory limit is hit for real,
+    // then holds it for the given time, so a limit that is checked by polling can see it.
     private unsafe void AllocateForTest(in Message request)
     {
-        int megabytes = new PayloadReader(request.Payload).ReadInt32();
+        var reader = new PayloadReader(request.Payload);
+        int megabytes = reader.ReadInt32();
+        int holdMilliseconds = reader.ReadInt32();
         nuint bytes = (nuint)megabytes * 1024 * 1024;
         byte* memory = (byte*)NativeMemory.Alloc(bytes);
         try
@@ -449,6 +452,8 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
             {
                 memory[offset] = 1;
             }
+
+            Thread.Sleep(holdMilliseconds);
         }
         finally
         {

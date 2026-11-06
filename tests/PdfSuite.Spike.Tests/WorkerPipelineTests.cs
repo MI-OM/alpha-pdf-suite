@@ -205,13 +205,20 @@ public sealed class WorkerPipelineTests : IDisposable
     }
 
     [Fact]
-    public async Task WindowsJobObject_EnforcesTheWorkerMemoryLimit()
+    public async Task WorkerMemoryLimit_IsEnforcedOnEveryOs()
     {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), "Worker memory limits are implemented on Windows only (spike S1).");
-
         using WorkerClient limited = WorkerClient.Start(
             new WorkerOptions(WorkerOptions.DefaultWorkerPath()) { EnableTestCommands = true, MemoryLimitBytes = 256L * 1024 * 1024 });
 
+        if (OperatingSystem.IsMacOS())
+        {
+            // macOS: the client sees the footprint go over the limit and stops the worker.
+            await Assert.ThrowsAsync<WorkerExitedException>(() => limited.AllocateForTestAsync(megabytes: 768, holdMilliseconds: 5000));
+            Assert.True(limited.HasExited);
+            return;
+        }
+
+        // Windows (Job Object) and Linux (RLIMIT_DATA): the allocation is refused.
         var error = await Assert.ThrowsAsync<WorkerException>(() => limited.AllocateForTestAsync(megabytes: 512));
         Assert.Equal(WorkerErrorCode.OutOfMemory, error.Code);
 

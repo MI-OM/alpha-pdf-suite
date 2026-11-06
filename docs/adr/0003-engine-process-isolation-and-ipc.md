@@ -35,7 +35,9 @@
   - Tests cover the kill, restart, give-up and cancellation paths on all three OSes in CI.
 - **Limits:**
   - **Windows:** a Job Object caps committed memory (1.5 GB by default), kills the worker when the app's handle closes, and suppresses Windows Error Reporting. The memory cap is verified by a test.
-  - **Linux and macOS:** no limit is applied yet (finding 12).
+  - **Linux and macOS:** no limit was applied in the spike (finding 12). Since 2026-11-06:
+    - Linux: the worker caps itself with `RLIMIT_DATA`.
+    - macOS: the client stops a worker whose footprint goes over the limit (spike results, "After the spike").
 - **Defects found and fixed during the spike:** two robustness bugs (finding 23).
 - **A defect found and fixed:** a cancelled open could leave a document open in the worker until it exited (finding 13). Since 2026-11-06 the client closes it when the late answer arrives, and a test cancels 30 opens at different moments.
 - **Printing** needs the worker to reach the print spooler (finding 25).
@@ -54,7 +56,9 @@
 4. **Crash policy:** restart and reopen, up to 3 times in 30 s, then a *Failed* state the user can see.
 5. **Resource limits on every OS:**
    - **Windows:** the Job Object as built.
-   - **Linux and macOS:** limits to be designed and verified before those platforms are declared supported. On Linux, likely cgroups, because `RLIMIT_AS` is expected to conflict with the .NET runtime's address-space reservations; that is not tested.
+   - **Linux:** the worker sets `RLIMIT_DATA`, hard and soft, on itself before reading any request. That counts committed memory, not the runtime's reservations.
+   - **macOS:** the client checks the worker's footprint every 250 ms and stops it when over. That is a softer cap, because macOS enforces neither `RLIMIT_DATA` nor `RLIMIT_AS` for mapped memory.
+   - CPU-time limits are not designed yet.
 6. **An OS sandbox** for the worker on each OS is a Milestone 1 investigation. It must keep access to the print spooler, or printing moves to a small broker process.
 
 **Rationale:** the stdin/stdout design met S1's latency and recovery targets with no extra dependencies. It cannot be reached by other processes, and it already carries every operation the product needs.
@@ -78,7 +82,7 @@
 ## 8. Validation experiment
 - **Done in the spike:** S1's measurements and failure tests.
 - **Not done yet:**
-  - memory and CPU limits on Linux and macOS
+  - CPU-time limits on every OS
   - an OS sandbox experiment on each OS: AppContainer or a restricted token on Windows, the App Sandbox or `sandbox-exec` profiles on macOS, seccomp or Landlock on Linux
   - fuzzing the worker through the protocol
 

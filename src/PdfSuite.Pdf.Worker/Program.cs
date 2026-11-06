@@ -5,13 +5,21 @@ using PdfSuite.Pdf.Qpdf;
 using PdfSuite.Pdf.Worker;
 
 // The worker process: the only place where PDF documents are parsed (PRD §8).
-//   --serve [--test-commands]   serve requests from the app on stdin/stdout
+//   --serve [--test-commands] [--memory-limit <bytes>]
+//                               serve requests from the app on stdin/stdout; on Linux the
+//                               worker caps its own memory first (LinuxMemoryLimit)
 //   --self-test <file.pdf>      open a file and print its page count and qpdf's version (used by CI)
 
 switch (args)
 {
     case ["--serve", .. var options]:
         {
+            int limitAt = Array.IndexOf(options, "--memory-limit");
+            if (OperatingSystem.IsLinux() && limitAt >= 0 && limitAt + 1 < options.Length)
+            {
+                LinuxMemoryLimit.Apply(long.Parse(options[limitAt + 1], CultureInfo.InvariantCulture));
+            }
+
             // stdout carries protocol frames only; diagnostics go to stderr.
             using Stream input = Console.OpenStandardInput();
             using Stream output = new BufferedStream(Console.OpenStandardOutput(), 1 << 16);
@@ -22,7 +30,7 @@ switch (args)
         return SelfTest(path);
 
     default:
-        Console.Error.WriteLine("Usage: PdfSuite.Pdf.Worker --serve [--test-commands] | --self-test <file.pdf>");
+        Console.Error.WriteLine("Usage: PdfSuite.Pdf.Worker --serve [--test-commands] [--memory-limit <bytes>] | --self-test <file.pdf>");
         return 2;
 }
 
