@@ -863,9 +863,24 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
     - **Mostly settled at `b186887`,** a third build of the same app code. Its warm folder launches reached the first page in 0.35–0.38 s, as fast as in S6.
       - So identical code took 0.35, 1.0–1.3 and 1.9–2.0 s warm on these runners: the folder slowdown was the runners, not the code.
       - `3ed4dc6`, a fourth build of the same app code, turned it around: the folder was close to S6 again, while the installed DMG's warm launches were the slowest yet, at 1.1–1.7 s.
-    - **Still unexplained:** the DMG's first launch reached the first page in 2.8–3.8 s in the last seven runs, against 1.05–2.4 s in S6. Its window took 0.6–1.4 s, within the PRD's 3 s target.
-      - Re-running the Package workflow at `97cefbe` and at the latest commit, alternately, would separate runner load from a cost that came in with `97cefbe`.
-      - `81ab077` can no longer be rebuilt for this: its pinned runtime now fails NuGet's audit (finding 50).
+    - **The DMG's first launch** reached the first page in 2.8–3.8 s in the seven runs after S6, against 1.05–2.4 s in S6. Its window took 0.6–1.4 s, within the PRD's 3 s target.
+    - **A/B re-runs (2026-11-06)** of the Package runs at `97cefbe` (run 42162820338) and `3d36614` (run 42263377962), alternately, twice each:
+
+    | Order | Commit | DMG, first launch | DMG, warm | NativeAOT folder, first run | NativeAOT folder, warm |
+    |---|---|---|---|---|---|
+    | 1 | `97cefbe` | 1,359 / 4,133 | 369–373 / 944–1,086 | 811 / 3,153 | 281–550 / 895–1,124 |
+    | 2 | `3d36614` | 1,074 / 3,690 | 207–324 / 613–785 | 355 / 776 | 168–256 / 466–573 |
+    | 3 | `97cefbe` | 785 / 2,634 | 222–234 / 544–727 | 628 / 3,278 | 395–701 / 979–1,418 |
+    | 4 | `3d36614` | 920 / 3,680 | 267–398 / 721–941 | 422 / 835 | 154–158 / 407–429 |
+
+      - **No regression since `97cefbe`.** Over three runs each, its DMG first launches reached the first page in 2.6–4.1 s, and `3d36614`'s in 3.7–3.75 s.
+        - One commit's first launches spread over 1.5 s. So a single run per commit could never have shown a smaller change.
+      - **The published folders were slower at `97cefbe`, in both re-runs:** 3.2–3.3 s to the first page on the first run, against 0.8 s. Its ReadyToRun folder was slower too.
+        - The installed DMG holds the same files and showed no such gap, on fresh runners. Nor did `97cefbe`'s original run (564–666 ms warm).
+        - So it is probably not the app's code. The macOS build steps on those runners were not slower either, so this comparison does not explain it.
+    - **Still unexplained: the rise since S6.** Either the runner images drifted, or the cost came in between S6 and `97cefbe`, with the worker operations of `ba0966e` or the SDK bump to 10.0.403.
+      - S6's commits cannot be rebuilt as they are: their pinned runtime now fails NuGet's audit (finding 50).
+      - S6's app code could be rebuilt with SDK 10.0.403 on a throwaway branch, which would separate the two.
       - A Mac to measure on would settle it.
 53. **The .deb accepts older distributions than CI checks, and may not start on them.**
     - Its dependencies accept ICU from Ubuntu 22.04 (`libicu70`) and Debian 12 (`libicu72`), and any version of `libc6`.
