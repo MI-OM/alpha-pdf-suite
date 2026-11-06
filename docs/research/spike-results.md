@@ -804,7 +804,7 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
     - The container step took 98 s: about 35 s to build the image (clang and its dependencies from Ubuntu's archive) and 63 s to publish.
     - The NativeAOT publish on the runner took 46–69 s in the three runs before.
     - Caching the image would win most of that back. Not done.
-  - **Two small faults, fixed in a local commit and not run yet:**
+  - **Two small faults,** fixed at `3d36614`:
     - The publish script's size notice did not become an annotation, because `GITHUB_ACTIONS` was not passed into the container. The log has it: 54.9 MB in 15 files.
     - Reading the container's glibc version printed a harmless "broken pipe" message, because `head` closed the pipe while `docker run` was still writing.
   - **A macOS runner shortage blocked the Linux checks.**
@@ -812,6 +812,13 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
     - Every install job needs the whole package matrix, so all of them were skipped, the Linux ones included.
     - Re-running the failed jobs passed.
     - Splitting the package job by OS would let each OS's install jobs run on their own. Not done.
+- **CI at `3d36614`** (Package run 42263377962 and CI run 42263377931, both passed at the first attempt):
+  - **Both fixes work.** The AOT size is an annotation (54.9 MB in 15 files), and the broken-pipe message is gone.
+  - **The same floor,** glibc 2.34. The .deb installed and launched on all five releases again, each reaching the first page in 0.16–0.21 s on its first launch.
+  - **The network check** passed again.
+  - **The container step took 105 s,** 32 s of it building the image. The other OSes' NativeAOT publishes were slower too: 77–81 s, against 44–65 s in the run before.
+  - **The AppImage's first launch** took 1.9 s to the window, so three of its eight runs were over 3 s (finding 48).
+  - **The DMG's first launch** took 1.4 s to the window and 3.75 s to the first page, the slowest of both so far (finding 52).
 
 ### Findings
 50. **NuGet's audit stopped the NativeAOT publish: the pinned runtime has a high-severity vulnerability.**
@@ -845,6 +852,7 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
     | `6d625fb` (same app code) | 859 / 2,782 | 249–296 / 640–737 | 279–384 / 995–1,258 | 482–1,092 / 1,082–1,809 |
     | `b186887` (same app code) | 1,048 / 3,271 | 206–263 / 574–691 | 135–144 / 345–376 | 334–359 / 671–753 |
     | `3ed4dc6` (same app code) | 1,026 / 3,538 | 402–491 / 1,107–1,743 | 167–182 / 467–471 | 296–332 / 627–749 |
+    | `3d36614` (same app code) | 1,442 / 3,754 | 271–275 / 656–764 | 234–332 / 671–760 | 394–607 / 912–1,141 |
 
     - **On the other OSes, nothing moved.** At `70680f1`, the NativeAOT folder's warm launches reached the first page in 191–211 ms on Windows and 138–144 ms on Linux, against 196–199 ms and 184–185 ms in S6.
     - **Evidence against a cause in this push:**
@@ -855,7 +863,7 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
     - **Mostly settled at `b186887`,** a third build of the same app code. Its warm folder launches reached the first page in 0.35–0.38 s, as fast as in S6.
       - So identical code took 0.35, 1.0–1.3 and 1.9–2.0 s warm on these runners: the folder slowdown was the runners, not the code.
       - `3ed4dc6`, a fourth build of the same app code, turned it around: the folder was close to S6 again, while the installed DMG's warm launches were the slowest yet, at 1.1–1.7 s.
-    - **Still unexplained:** the DMG's first launch reached the first page in 2.8–3.5 s in the last six runs, against 1.05–2.4 s in S6. Its window stayed at 0.6–1.05 s, within the PRD's 3 s target.
+    - **Still unexplained:** the DMG's first launch reached the first page in 2.8–3.8 s in the last seven runs, against 1.05–2.4 s in S6. Its window took 0.6–1.4 s, within the PRD's 3 s target.
       - Re-running the Package workflow at `97cefbe` and at the latest commit, alternately, would separate runner load from a cost that came in with `97cefbe`.
       - `81ab077` can no longer be rebuilt for this: its pinned runtime now fails NuGet's audit (finding 50).
       - A Mac to measure on would settle it.
