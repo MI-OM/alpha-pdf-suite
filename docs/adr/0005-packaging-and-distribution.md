@@ -63,6 +63,9 @@ All from spike item S6 (spike results: S6 evidence and findings 38–49):
    - **Windows x64:** MSIX. arm64 later.
    - **macOS arm64:** a DMG with a `.app` bundle. x64 is decided by build testing (PRD §6).
    - **Linux x64:** .deb and AppImage. arm64 later.
+     - They support Ubuntu 22.04 and Debian 12 onwards (decided 2026-11-06).
+     - So the NativeAOT executables are linked in a container of the oldest supported release (Ubuntu 22.04, pinned by digest), and need no newer glibc than it has.
+     - The .deb declares that floor, and CI installs it on every release whose ICU it accepts (findings 53 and 54).
    - All are built by the project's own scripts in `tools/package/`, on each OS's CI runner.
 3. **Every package is installed on a fresh machine and launched in CI** before it can be released. That is the Package workflow's install jobs.
 4. **Signing:**
@@ -80,6 +83,7 @@ All from spike item S6 (spike results: S6 evidence and findings 38–49):
 - **Lock files:** 15 more of them to keep in step with the SDK pin.
 - **macOS needs a paid membership.** Without it, Gatekeeper blocks downloaded copies.
 - **The AppImage** brings LGPL obligations and slower first launches. The .deb has neither.
+- **The Linux build container** must stay on the oldest supported release. Dropping a release means moving the container and the oldest install jobs on together; the floor then rises on purpose.
 
 ## 6. Licensing and security consequences
 - **Licences that ship:**
@@ -90,6 +94,7 @@ All from spike item S6 (spike results: S6 evidence and findings 38–49):
 - **Supply chain:**
   - appimagetool and the AppImage runtime are pinned by SHA-256; the AppImage runtime's release signature is not yet verified.
   - Publish restores are not yet locked (decision 5 fixes this).
+  - The Linux build container is pinned by digest. The clang it installs comes from Ubuntu's archive at build time, unpinned.
 - **Signing:**
   - The spike's MSIX test certificate is created in memory on every run, is never stored, and is trusted only on throwaway CI runners. It must never be distributed or trusted on real machines.
   - An ad hoc signature gives no publisher identity. Only notarisation gives users a verifiable origin on macOS.
@@ -114,3 +119,4 @@ All from spike item S6 (spike results: S6 evidence and findings 38–49):
 - **A store or distribution channel** requires a different format, or forbids NativeAOT executables.
 - **The maintainer decides not to join the Apple Developer Program.** macOS would then ship as an unsigned preview, or through Homebrew with its limits.
 - **The AppImage's LGPL obligations or first-launch time** are judged not worth it. Ship .deb only, and Flatpak once Flathub becomes possible.
+- **Ubuntu 22.04 leaves standard support (April 2027)**, or Debian 12 its LTS (June 2028): move the build container and the oldest install jobs to the next oldest supported release.

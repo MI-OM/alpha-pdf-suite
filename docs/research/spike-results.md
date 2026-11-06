@@ -777,6 +777,12 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
   - **So the floor comes from where the app is linked, not from what it needs.** Linked against an older glibc, the app would need only what the bundled libraries need: glibc 2.34, which Ubuntu 22.04 and Debian 12 have.
   - It also means a newer runner image can raise the floor again. The annotation and the install jobs would now show it.
   - The results otherwise matched `6d625fb`: Ubuntu 24.04 and 26.04 and Debian 13 passed, and Ubuntu 22.04 and Debian 12 refused the package.
+- **Decided 2026-11-06: keep Ubuntu 22.04 and Debian 12, by linking against an older glibc.**
+  - The Package workflow's Linux NativeAOT build now runs in an Ubuntu 22.04 container (glibc 2.35), pinned by digest.
+    - The runner's SDK and PowerShell are mounted at their own paths, and the build runs as the runner's user.
+    - The job's other steps stay on the runner: the ReadyToRun comparison build, the smoke tests and the packaging.
+  - **Why not GitHub's `ubuntu-22.04` runner instead:** GitHub keeps two generally available Ubuntu images. 24.04 and 26.04 both are, so 22.04 is likely to be retired next. A Docker Hub image stays available.
+  - **Expected:** the floor drops to the bundled libraries' glibc 2.34, and Ubuntu 22.04 and Debian 12 install and launch the app. This is in a local commit, not run yet.
   - PowerShell 7 on the runner found the same libstdc++ and libgcc floors as Windows PowerShell 5.1 here, so the reader works the same in both.
   - **The AppImage's first launch** took 4.5 s to the window. That is over the PRD's 3 s target in three of its six runs (finding 48).
 
@@ -831,7 +837,7 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
     - If the files need a newer glibc than a system has, apt installs the package and it then fails to start.
     - **Confirmed** at `6d625fb`: the app needs glibc 2.38, above Ubuntu 22.04's 2.35 and Debian 12's 2.36. The floor is now declared, so apt refuses the package there instead of installing one that cannot start (see "Linux releases for the .deb").
     - **The cause** (`b186887`): one function, `fmod`, which the runner's glibc 2.43 binds to its 2.38 version at link time.
-    - **Open: support those two releases, or stop accepting them.** The options:
+    - **Decided 2026-11-06: link against an older glibc**, so both releases stay supported (see "Linux releases for the .deb"). The options were:
       - **Stop accepting them:** remove `libicu70` and `libicu72` and their install jobs. No cost now, and the .deb supports Ubuntu 24.04 and Debian 13 onwards.
       - **Link against an older glibc:** publish the Linux build in a pinned older image, or with a sysroot, as .NET's own builds do. The floor drops to the bundled libraries' 2.34. It stops depending on the runner image, and the AppImage, whose point is to run on many systems, reaches older ones too. It changes the Linux packaging job, and is an ADR-0005 decision.
       - **Pin `fmod` to its old version** with a linker wrapper: a few lines of C. A stopgap, which the floor annotation would show failing as soon as another function moves.

@@ -115,8 +115,9 @@ Set-Modes $root
 
 # The newest glibc the files need becomes the libc6 version the package depends on, so apt refuses
 # the package on an older system instead of installing one that cannot start (finding 53). The
-# NativeAOT executables are linked on the build machine, so a newer build image can raise it. The
-# libstdc++ and libgcc versions are recorded, not declared: the install jobs check them.
+# NativeAOT executables need the glibc they were linked against, which is why the Package workflow
+# links them in an Ubuntu 22.04 container. The libstdc++ and libgcc versions are recorded, not
+# declared: the install jobs check them.
 $floors = @(Get-RuntimeLibraryFloor $Layout)
 foreach ($floor in $floors) {
     $symbols = ($floor.Symbols | Select-Object -First 12) -join ', '
