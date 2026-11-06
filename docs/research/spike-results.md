@@ -187,7 +187,7 @@ Machine: i5-1235U, 12 logical cores, Windows 11 x64, scaling 1.0, 1000 × 701 DI
 
 ### Still open for S1
 - **Linux (X11 and XWayland) and macOS:** the interactive benchmark and a visual check. CI runs the pipeline tests on all three OSes.
-- **Worker memory limits on Linux and macOS.**
+- **Worker memory limits on Linux and macOS:** done 2026-11-06 and passing in CI ("After the spike").
 - **Display scaling above 1.0:** tile size in device pixels is implemented, but not yet measured.
 
 ## S2 — Document-text accessibility (2026-10-31)
