@@ -119,7 +119,9 @@ Set-Modes $root
 # libstdc++ and libgcc versions are recorded, not declared: the install jobs check them.
 $floors = @(Get-RuntimeLibraryFloor $Layout)
 foreach ($floor in $floors) {
-    Write-Notice 'Library floor' ("{0}_{1}, needed by {2}" -f $floor.Family, $floor.Version, ($floor.Files -join ', '))
+    $symbols = ($floor.Symbols | Select-Object -First 12) -join ', '
+    if ($floor.Symbols.Count -gt 12) { $symbols += " and $($floor.Symbols.Count - 12) more" }
+    Write-Notice 'Library floor' ("{0}_{1}, needed by {2}, for {3}" -f $floor.Family, $floor.Version, ($floor.Files -join ', '), $symbols)
 }
 $glibc = $floors | Where-Object Family -eq 'GLIBC'
 if (-not $glibc) { throw "No file in $Layout needs a glibc version, so the libc6 dependency cannot be set." }

@@ -43,8 +43,9 @@ function Format-Megabytes {
 
 function Get-ElfVersionNeeds {
     # The symbol versions an ELF file needs from each shared library: its version references
-    # (.gnu.version_r), which the dynamic loader checks before the program starts. Read directly,
-    # so packaging needs no binutils. Returns nothing for a file that is not ELF.
+    # (.gnu.version_r), which the dynamic loader checks before the program starts, each with the
+    # undefined symbols that need it (.dynsym and .gnu.version). Read directly, so packaging needs
+    # no binutils. Returns nothing for a file that is not ELF.
     param([Parameter(Mandatory)] [string] $Path)
     $b = [System.IO.File]::ReadAllBytes($Path)
     if ($b.Length -lt 64 -or $b[0] -ne 0x7F -or $b[1] -ne 0x45 -or $b[2] -ne 0x4C -or $b[3] -ne 0x46) { return }
@@ -56,22 +57,44 @@ function Get-ElfVersionNeeds {
 
     $sectionTable = [BitConverter]::ToInt64($b, 0x28)
     $sectionSize = U16 0x3A
-    $sections = U16 0x3C
-    if ($sections -eq 0) { throw "$Path has no section headers, so its version references cannot be read." }
-    for ($i = 0; $i -lt $sections; $i++) {
-        $section = $sectionTable + $i * $sectionSize
-        if ((U32 ($section + 4)) -ne 0x6FFFFFFE) { continue }   # SHT_GNU_verneed
-        $strings = [BitConverter]::ToInt64($b, $sectionTable + (U32 ($section + 40)) * $sectionSize + 24)
-        $need = [BitConverter]::ToInt64($b, $section + 24)
-        for ($n = 0; $n -lt (U32 ($section + 44)); $n++) {      # Elf64_Verneed entries
-            $library = Text ($strings + (U32 ($need + 4)))
-            $aux = $need + (U32 ($need + 8))
-            for ($a = 0; $a -lt (U16 ($need + 2)); $a++) {      # Elf64_Vernaux entries
-                [pscustomobject]@{ Library = $library; Version = Text ($strings + (U32 ($aux + 8))) }
-                $aux += U32 ($aux + 12)
-            }
-            $need += U32 ($need + 12)
+    $sectionCount = U16 0x3C
+    if ($sectionCount -eq 0) { throw "$Path has no section headers, so its version references cannot be read." }
+    $sections = for ($i = 0; $i -lt $sectionCount; $i++) {
+        $at = $sectionTable + $i * $sectionSize
+        [pscustomobject]@{ Type = U32 ($at + 4); Offset = [BitConverter]::ToInt64($b, $at + 24); Size = [BitConverter]::ToInt64($b, $at + 32); Link = U32 ($at + 40); Info = U32 ($at + 44) }
+    }
+    $verneed = $sections | Where-Object Type -eq 0x6FFFFFFE | Select-Object -First 1   # SHT_GNU_verneed
+    if (-not $verneed) { return }
+    $dynsym = $sections | Where-Object Type -eq 11 | Select-Object -First 1             # SHT_DYNSYM
+    $versym = $sections | Where-Object Type -eq 0x6FFFFFFF | Select-Object -First 1     # SHT_GNU_versym
+
+    # Undefined dynamic symbols, by the version index each needs. Index 0 is local, 1 unversioned.
+    $symbolsByIndex = @{}
+    if ($dynsym -and $versym) {
+        $names = $sections[$dynsym.Link].Offset
+        for ($s = 1; $s -lt $dynsym.Size / 24; $s++) {                                  # Elf64_Sym entries
+            $symbol = $dynsym.Offset + $s * 24
+            if ((U16 ($symbol + 6)) -ne 0) { continue }                                  # defined in this file
+            $index = (U16 ($versym.Offset + $s * 2)) -band 0x7FFF
+            if ($index -lt 2) { continue }
+            if (-not $symbolsByIndex.ContainsKey($index)) { $symbolsByIndex[$index] = New-Object System.Collections.Generic.List[string] }
+            $symbolsByIndex[$index].Add((Text ($names + (U32 $symbol))))
         }
+    }
+
+    $strings = $sections[$verneed.Link].Offset
+    $need = $verneed.Offset
+    for ($n = 0; $n -lt $verneed.Info; $n++) {                                          # Elf64_Verneed entries
+        $library = Text ($strings + (U32 ($need + 4)))
+        $aux = $need + (U32 ($need + 8))
+        for ($a = 0; $a -lt (U16 ($need + 2)); $a++) {                                  # Elf64_Vernaux entries
+            $index = U16 ($aux + 6)
+            $symbols = [string[]]@()
+            if ($symbolsByIndex.ContainsKey($index)) { $symbols = $symbolsByIndex[$index].ToArray() }
+            [pscustomobject]@{ Library = $library; Version = Text ($strings + (U32 ($aux + 8))); Symbols = $symbols }
+            $aux += U32 ($aux + 12)
+        }
+        $need += U32 ($need + 12)
     }
 }
 
@@ -84,19 +107,21 @@ function Get-RuntimeLibraryFloor {
         foreach ($need in Get-ElfVersionNeeds $file.FullName) {
             if ($need.Version -eq 'GLIBC_ABI_DT_RELR') {
                 # Packed relative relocations, which glibc supports from 2.36.
-                [pscustomobject]@{ Family = 'GLIBC'; Version = [version]'2.36'; File = $file.Name }
+                [pscustomobject]@{ Family = 'GLIBC'; Version = [version]'2.36'; File = $file.Name; Symbols = [string[]]@('(packed relocations)') }
             }
             elseif ($need.Version -match '^(GLIBC|GLIBCXX|CXXABI|GCC)_(\d+(\.\d+)+)$') {
-                [pscustomobject]@{ Family = $Matches[1]; Version = [version]$Matches[2]; File = $file.Name }
+                [pscustomobject]@{ Family = $Matches[1]; Version = [version]$Matches[2]; File = $file.Name; Symbols = $need.Symbols }
             }
         }
     }
     foreach ($family in $needs | Group-Object Family | Sort-Object Name) {
         $newest = ($family.Group | Sort-Object Version -Descending | Select-Object -First 1).Version
+        $top = @($family.Group | Where-Object { $_.Version -eq $newest })
         [pscustomobject]@{
             Family  = $family.Name
             Version = $newest
-            Files   = @($family.Group | Where-Object { $_.Version -eq $newest } | ForEach-Object File | Sort-Object -Unique)
+            Files   = @($top | ForEach-Object File | Sort-Object -Unique)
+            Symbols = @($top | ForEach-Object { $_.Symbols } | Sort-Object -Unique)
         }
     }
 }
