@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using PdfSuite.Pdf.Abstractions;
 
 namespace PdfSuite.Pdf.Remote;
 
@@ -18,7 +19,11 @@ public enum MessageKind : byte
     GetTextLines = 5,
     Print = 6,
     GetEngineInfo = 7,
+    Redact = 8,
+    Transform = 9,
+    GetMetadata = 10,
     AllocateForTest = 90,
+    CountDocumentsForTest = 91,
 
     // Responses
     Opened = 101,
@@ -27,6 +32,9 @@ public enum MessageKind : byte
     TextLines = 105,
     Printed = 106,
     EngineInfo = 107,
+    Redacted = 108,
+    Transformed = 109,
+    Metadata = 110,
     Error = 199,
 }
 
@@ -40,6 +48,29 @@ public enum WorkerErrorCode
     OutOfMemory = 5,
     PrintFailed = 6,
     NotSupported = 7,
+
+    /// <summary>qpdf could not process the document. The detail is qpdf's error code.</summary>
+    StructureFailed = 8,
+}
+
+/// <summary>The whole-file operations a <see cref="MessageKind.Transform"/> request performs with qpdf.</summary>
+public enum TransformOperation
+{
+    Encrypt = 1,
+    Decrypt = 2,
+    SetMetadata = 3,
+    Rewrite = 4,
+}
+
+/// <summary>How <see cref="PdfPermissions"/> travel in an encrypt request: one bit per permission.</summary>
+public static class PermissionBits
+{
+    public static int Encode(PdfPermissions permissions) =>
+        (permissions.Print ? 1 : 0) | (permissions.CopyText ? 2 : 0) | (permissions.Modify ? 4 : 0)
+        | (permissions.AnnotateAndFillForms ? 8 : 0) | (permissions.Assemble ? 16 : 0);
+
+    public static PdfPermissions Decode(int bits) =>
+        new((bits & 1) != 0, (bits & 2) != 0, (bits & 4) != 0, (bits & 8) != 0, (bits & 16) != 0);
 }
 
 /// <summary>A received frame. The payload is rented from the shared pool; dispose to return it.</summary>

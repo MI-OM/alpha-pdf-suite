@@ -4,18 +4,6 @@ using PdfSuite.Pdf.Qpdf;
 
 namespace PdfSuite.Pdf.Redaction;
 
-/// <summary>An area to remove: a rectangle in points from the top-left corner of the page as displayed.</summary>
-public readonly record struct RedactionArea(int PageIndex, PageRect Rect);
-
-public sealed record RedactionResult(byte[] Pdf, VerificationReport Report);
-
-/// <summary>The rebuilt file did not pass <see cref="RedactionVerifier"/>, so it was not returned.</summary>
-public sealed class RedactionFailedException(VerificationReport report)
-    : Exception("The redacted file failed verification: " + string.Join(" ", report.Failures.Select(f => f.Message)))
-{
-    public VerificationReport Report { get; } = report;
-}
-
 /// <summary>
 /// Redaction by rebuilding (spike S5). The output is a new document, never an edit of the source:
 /// pages with redaction areas are rendered to an image with the areas filled black, and every other

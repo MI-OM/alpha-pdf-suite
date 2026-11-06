@@ -263,10 +263,10 @@ public sealed class RedactionTests
         Assert.Equal("CANARY-01", Encoding.Latin1.GetString(ContentStrings.Extract(content)));
     }
 
-    private static RedactionArea TargetOf(string file, byte[] source) => TargetOf(Fixtures.All.Single(f => f.Info.File == file).Info, source);
+    internal static RedactionArea TargetOf(string file, byte[] source) => TargetOf(Fixtures.All.Single(f => f.Info.File == file).Info, source);
 
     // The manifest's rectangle is in PDF space (left, bottom, right, top from the bottom-left).
-    private static RedactionArea TargetOf(FixtureInfo info, byte[] source)
+    internal static RedactionArea TargetOf(FixtureInfo info, byte[] source)
     {
         using var document = PdfiumDocumentWriter.Load(source);
         int page = info.RedactPage!.Value;

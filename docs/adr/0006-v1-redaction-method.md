@@ -70,7 +70,7 @@ Spike item S5 (spike results: S5 evidence, and findings 30–37):
 3. **The independent verifier runs on every output,** and a file that fails is never saved. Secrets are the source's text under each area, plus any terms the user adds.
    - **Warning, not refusal:** a secret that also appears on a kept page, which the UI must explain.
    - **Refusal:** a secret found anywhere else in the output.
-4. **Redaction and verification run in the worker** (ADR-0003). That is Milestone 1 work.
+4. **Redaction and verification run in the worker** (ADR-0003). Since 2026-11-06 the worker serves them, and the client returns the verifier's report either way.
 5. **Before applying,** the UI states that redacted pages lose selectable text, links and vector quality, and grow in size (finding 30).
 6. **OCR** to restore searchable text outside the areas (PRD §4.7, step 2) is optional, and follows the OCR milestone.
 7. **For v2:** the glyph-level route (C), using our own content-stream parsing to keep character codes, with the same verifier as the gate.
@@ -105,7 +105,7 @@ Spike item S5 (spike results: S5 evidence, and findings 30–37):
 - **Not done yet:**
   - a real-world corpus: scanned and born-digital files, CJK fonts, Type 3 fonts, forms, and tagged PDFs
   - fuzzing the content-stream lexer and the verifier
-  - redaction running in the worker, with the UI flow and copy
+  - the redaction UI flow and its copy
   - performance on documents with many redacted pages
   - OCR restoration of the remaining text
   - an external review of the method before the feature is called complete

@@ -176,7 +176,7 @@ public sealed class WorkerClient : IDisposable
         Pending pending = Register(id);
 
         // Cancelling unregisters the request, so the watchdog does not mistake it for a hang.
-        // If the worker had already started opening, that document stays open until the worker exits.
+        // If the worker had already started opening, the late answer closes the document (Discard).
         Message response;
         using (cancellationToken.Register(() => CancelRequest(id)))
         {
@@ -339,6 +339,143 @@ public sealed class WorkerClient : IDisposable
         ThrowIfError(response);
     }
 
+    /// <summary>
+    /// Redacts a document by rebuilding it, and verifies the result (ADR-0006). The worker handles
+    /// one request at a time, and this one can take seconds on a long document, so it holds up
+    /// rendering for any document open in the same worker.
+    /// </summary>
+    /// <param name="extraTerms">Text the verifier must also find nowhere in the output.</param>
+    /// <exception cref="RedactionFailedException">The rebuilt file failed verification, so none was returned.</exception>
+    /// <exception cref="PdfOpenException">The source could not be opened, for example because it is encrypted.</exception>
+    public async Task<RedactionResult> RedactAsync(
+        ReadOnlyMemory<byte> pdf, IReadOnlyList<RedactionArea> areas, IReadOnlyList<string>? extraTerms = null, CancellationToken cancellationToken = default)
+    {
+        extraTerms ??= [];
+        byte[] header = new byte[8 + (36 * areas.Count) + extraTerms.Sum(PayloadWriter.SizeOf)];
+        var writer = new PayloadWriter(header);
+        writer.WriteInt32(areas.Count);
+        foreach (RedactionArea area in areas)
+        {
+            writer.WriteInt32(area.PageIndex);
+            writer.WriteDouble(area.Rect.Left);
+            writer.WriteDouble(area.Rect.Top);
+            writer.WriteDouble(area.Rect.Right);
+            writer.WriteDouble(area.Rect.Bottom);
+        }
+
+        writer.WriteInt32(extraTerms.Count);
+        foreach (string term in extraTerms)
+        {
+            writer.WriteString(term);
+        }
+
+        // Rendering, rebuilding and verifying: 5.5 s for 2 pages of a 2,000-page, 4.9 MB file (spike S5).
+        int pages = areas.Select(a => a.PageIndex).Distinct().Count();
+        TimeSpan timeout = TimeSpan.FromSeconds(60 + (10 * pages) + (pdf.Length / (1024 * 1024)));
+        using Message response = await RequestAsync(MessageKind.Redact, header, pdf, timeout, cancellationToken).ConfigureAwait(false);
+        ThrowIfError(response);
+        Expect(response, MessageKind.Redacted);
+
+        var reader = new PayloadReader(response.Payload);
+        bool passed = reader.ReadInt32() != 0;
+        var failures = new VerificationFailure[reader.ReadInt32()];
+        for (int i = 0; i < failures.Length; i++)
+        {
+            failures[i] = new VerificationFailure((RedactionCheck)reader.ReadInt32(), reader.ReadString() ?? string.Empty);
+        }
+
+        var warnings = new string[reader.ReadInt32()];
+        for (int i = 0; i < warnings.Length; i++)
+        {
+            warnings[i] = reader.ReadString() ?? string.Empty;
+        }
+
+        var report = new VerificationReport(failures, warnings);
+        return passed ? new RedactionResult(reader.Remaining.ToArray(), report) : throw new RedactionFailedException(report);
+    }
+
+    /// <summary>Encrypts with AES-256 through qpdf in the worker.</summary>
+    /// <param name="password">The input's password, if it is already encrypted.</param>
+    /// <exception cref="PdfOpenException">The input needs a password, or the one given is wrong.</exception>
+    /// <exception cref="WorkerException">qpdf could not process the document (<see cref="WorkerErrorCode.StructureFailed"/>).</exception>
+    public Task<byte[]> EncryptAsync(
+        ReadOnlyMemory<byte> pdf, string userPassword, string ownerPassword, PdfPermissions permissions, string? password = null, CancellationToken cancellationToken = default)
+    {
+        byte[] header = TransformHeader(TransformOperation.Encrypt, password, PayloadWriter.SizeOf(userPassword) + PayloadWriter.SizeOf(ownerPassword) + 4, out int offset);
+        var writer = new PayloadWriter(header.AsSpan(offset));
+        writer.WriteString(userPassword);
+        writer.WriteString(ownerPassword);
+        writer.WriteInt32(PermissionBits.Encode(permissions));
+        return TransformAsync(header, pdf, cancellationToken);
+    }
+
+    /// <inheritdoc cref="EncryptAsync"/>
+    /// <summary>Removes encryption through qpdf in the worker.</summary>
+    public Task<byte[]> DecryptAsync(ReadOnlyMemory<byte> pdf, string password, CancellationToken cancellationToken = default) =>
+        TransformAsync(TransformHeader(TransformOperation.Decrypt, password, 0, out _), pdf, cancellationToken);
+
+    /// <inheritdoc cref="EncryptAsync"/>
+    /// <summary>Sets document information keys ("/Title" and so on) through qpdf in the worker; a null value removes the key.</summary>
+    public Task<byte[]> SetMetadataAsync(
+        ReadOnlyMemory<byte> pdf, IReadOnlyDictionary<string, string?> values, string? password = null, CancellationToken cancellationToken = default)
+    {
+        int size = 4 + values.Sum(v => PayloadWriter.SizeOf(v.Key) + PayloadWriter.SizeOf(v.Value));
+        byte[] header = TransformHeader(TransformOperation.SetMetadata, password, size, out int offset);
+        var writer = new PayloadWriter(header.AsSpan(offset));
+        writer.WriteInt32(values.Count);
+        foreach (var (key, value) in values)
+        {
+            writer.WriteString(key);
+            writer.WriteString(value);
+        }
+
+        return TransformAsync(header, pdf, cancellationToken);
+    }
+
+    /// <inheritdoc cref="EncryptAsync"/>
+    /// <summary>Rewrites the whole file through qpdf in the worker, dropping earlier revisions and unreferenced objects.</summary>
+    public Task<byte[]> RewriteAsync(ReadOnlyMemory<byte> pdf, string? password = null, CancellationToken cancellationToken = default) =>
+        TransformAsync(TransformHeader(TransformOperation.Rewrite, password, 0, out _), pdf, cancellationToken);
+
+    /// <inheritdoc cref="EncryptAsync"/>
+    /// <summary>Reads document information keys through qpdf in the worker. Keys the document does not have are left out.</summary>
+    public async Task<IReadOnlyDictionary<string, string>> GetMetadataAsync(
+        ReadOnlyMemory<byte> pdf, IReadOnlyList<string> keys, string? password = null, CancellationToken cancellationToken = default)
+    {
+        byte[] header = new byte[PayloadWriter.SizeOf(password) + 4 + keys.Sum(PayloadWriter.SizeOf)];
+        var writer = new PayloadWriter(header);
+        writer.WriteString(password);
+        writer.WriteInt32(keys.Count);
+        foreach (string key in keys)
+        {
+            writer.WriteString(key);
+        }
+
+        using Message response = await RequestAsync(MessageKind.GetMetadata, header, pdf, StructureTimeout(pdf), cancellationToken).ConfigureAwait(false);
+        ThrowIfError(response);
+        Expect(response, MessageKind.Metadata);
+
+        var reader = new PayloadReader(response.Payload);
+        var values = new Dictionary<string, string>();
+        for (int count = reader.ReadInt32(); count > 0; count--)
+        {
+            values[reader.ReadString() ?? string.Empty] = reader.ReadString() ?? string.Empty;
+        }
+
+        return values;
+    }
+
+    /// <summary>Test command: how many documents the worker has open.</summary>
+    public async Task<int> CountDocumentsForTestAsync()
+    {
+        int id = NextRequestId();
+        Pending pending = Register(id);
+        Send(MessageKind.CountDocumentsForTest, id, []);
+        using Message response = await pending.Completion.Task.ConfigureAwait(false);
+        ThrowIfError(response);
+        return new PayloadReader(response.Payload).ReadInt32();
+    }
+
     /// <summary>Test command: asks the worker to commit this much memory, then free it.</summary>
     public async Task AllocateForTestAsync(int megabytes)
     {
@@ -399,6 +536,66 @@ public sealed class WorkerClient : IDisposable
         writer.WriteInt32(passwordBytes?.Length ?? -1);
         writer.WriteBytes(passwordBytes);
         Send(MessageKind.Open, id, header, data.Span);
+    }
+
+    /// <summary>Sends a request whose payload is a header and then a document, and waits for the answer.</summary>
+    private async Task<Message> RequestAsync(
+        MessageKind kind, byte[] header, ReadOnlyMemory<byte> body, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        int id = NextRequestId();
+        Pending pending = Register(id, timeout);
+        using (cancellationToken.Register(() => CancelRequest(id)))
+        {
+            // A large document takes a moment to write, so it is sent off the caller's thread.
+            await Task.Run(() => Send(kind, id, header, body.Span), CancellationToken.None).ConfigureAwait(false);
+            return await pending.Completion.Task.ConfigureAwait(false);
+        }
+    }
+
+    // [int32 operation][password], then room for the operation's own fields, which start at offset.
+    private static byte[] TransformHeader(TransformOperation operation, string? password, int fieldsSize, out int offset)
+    {
+        offset = 4 + PayloadWriter.SizeOf(password);
+        byte[] header = new byte[offset + fieldsSize];
+        var writer = new PayloadWriter(header);
+        writer.WriteInt32((int)operation);
+        writer.WriteString(password);
+        return header;
+    }
+
+    private async Task<byte[]> TransformAsync(byte[] header, ReadOnlyMemory<byte> pdf, CancellationToken cancellationToken)
+    {
+        using Message response = await RequestAsync(MessageKind.Transform, header, pdf, StructureTimeout(pdf), cancellationToken).ConfigureAwait(false);
+        ThrowIfError(response);
+        Expect(response, MessageKind.Transformed);
+        return response.Payload.ToArray();
+    }
+
+    // qpdf reads and writes the whole file; allow for large ones.
+    private static TimeSpan StructureTimeout(ReadOnlyMemory<byte> pdf) => TimeSpan.FromSeconds(30 + (pdf.Length / (1024 * 1024)));
+
+    // A late answer to a cancelled request. An open that completed anyway would leave its document
+    // open in the worker until the worker exits (spike finding 13), so it is closed here.
+    private void Discard(Message message)
+    {
+        try
+        {
+            if (message.Kind == MessageKind.Opened)
+            {
+                Span<byte> payload = stackalloc byte[4];
+                new PayloadWriter(payload).WriteInt32(new PayloadReader(message.Payload).ReadInt32());
+                Send(MessageKind.Close, 0, payload);
+            }
+        }
+        catch (WorkerExitedException)
+        {
+            // The worker has gone, and the document with it.
+        }
+        finally
+        {
+            message.Dispose();
+        }
     }
 
     private void SendRenderTile(int id, int documentId, int pageIndex, double pixelsPerPoint, PixelRegion region)
@@ -476,13 +673,13 @@ public sealed class WorkerClient : IDisposable
                 {
                     if (!pending.Completion.TrySetResult(message))
                     {
-                        message.Dispose();
+                        Discard(message);
                     }
                 }
                 else
                 {
-                    // The request was cancelled after the worker had started it.
-                    message.Dispose();
+                    // The request was cancelled after the worker had started it, or needs no answer.
+                    Discard(message);
                 }
             }
         }

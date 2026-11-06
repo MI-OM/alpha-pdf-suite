@@ -76,7 +76,7 @@ pwsh tools/package/package-linux.ps1 -Layout artifacts/package/linux-x64-aot/app
 | `src/PdfSuite.Pdf.Qpdf` | qpdf bindings: AES-256 encryption, metadata, full rewrites (spike S4), and object-level editing |
 | `src/PdfSuite.Pdf.Redaction` | Redaction by rebuilding the document, and an independent verifier (spike S5) |
 | `src/PdfSuite.Pdf.Remote` | The app-to-worker protocol, worker client, crash-restarting document session, and Windows Job Object |
-| `src/PdfSuite.Pdf.Worker` | The out-of-process engine host (`--serve`), plus `--self-test` for CI. It loads PDFium, and qpdf for its version so far |
+| `src/PdfSuite.Pdf.Worker` | The out-of-process engine host (`--serve`), plus `--self-test` for CI. It parses documents with PDFium and qpdf, and runs redaction and qpdf operations |
 | `src/PdfSuite.App` | The Avalonia desktop shell: tiled document view and S1 benchmark |
 | `tools/PdfSuite.FixtureGenerator` | Synthetic, legally distributable test documents |
 | `tools/package` | NativeAOT publish, MSIX, DMG, AppImage and .deb packaging, and the launch smoke test (spike S6) |

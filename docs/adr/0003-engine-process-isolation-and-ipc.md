@@ -37,10 +37,10 @@
   - **Windows:** a Job Object caps committed memory (1.5 GB by default), kills the worker when the app's handle closes, and suppresses Windows Error Reporting. The memory cap is verified by a test.
   - **Linux and macOS:** no limit is applied yet (finding 12).
 - **Defects found and fixed during the spike:** two robustness bugs (finding 23).
-- **Open defect:** a cancelled open can leave a document open in the worker until it exits (finding 13).
+- **A defect found and fixed:** a cancelled open could leave a document open in the worker until it exited (finding 13). Since 2026-11-06 the client closes it when the late answer arrives, and a test cancels 30 opens at different moments.
 - **Printing** needs the worker to reach the print spooler (finding 25).
 - **qpdf** throws C++ exceptions across the C API in some calls, which ends the process on Linux and macOS (finding 28).
-- **Redaction** still runs in-process in the spike (finding 37).
+- **Redaction and qpdf operations** ran in-process in the spike (finding 37). Since 2026-11-06 they are worker requests, tested through a real worker process (spike results, "After the spike").
 - **S6:** the packaged NativeAOT worker is 1.8 MB. A new engine-info request proved that the installed worker loads qpdf on all three OSes.
 
 ## 4. Decision and rationale
@@ -81,8 +81,6 @@
   - memory and CPU limits on Linux and macOS
   - an OS sandbox experiment on each OS: AppContainer or a restricted token on Windows, the App Sandbox or `sandbox-exec` profiles on macOS, seccomp or Landlock on Linux
   - fuzzing the worker through the protocol
-  - redaction and qpdf requests moved into the worker, with tests
-  - closing late-arriving opens (finding 13)
 
 ## 9. Conditions that would cause reconsideration
 - **Tile throughput** becomes the bottleneck on high-DPI displays.

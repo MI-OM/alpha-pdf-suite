@@ -5,39 +5,6 @@ using PdfSuite.Pdf.Qpdf;
 
 namespace PdfSuite.Pdf.Redaction;
 
-public enum RedactionCheck
-{
-    /// <summary>One revision and nothing after its end-of-file marker. Earlier revisions keep whatever they held.</summary>
-    SingleRevision,
-
-    /// <summary>As many pages as the source, each the same size.</summary>
-    PagesMatchSource,
-
-    /// <summary>No document information, metadata, actions, bookmarks, attachments, forms, structure tree or layers.</summary>
-    NoDocumentLevelContent,
-
-    /// <summary>No page objects outside the page tree, such as an original page copied in through a link.</summary>
-    NoStrayPages,
-
-    /// <summary>Each redacted page is a single image: no text, vector art or annotations.</summary>
-    RedactedPagesAreImages,
-
-    /// <summary>No covered text, and no extra term, is left as page text or in any string or stream in the file.</summary>
-    TextRemoved,
-
-    /// <summary>Every area renders as solid black.</summary>
-    AreasCovered,
-}
-
-public sealed record VerificationFailure(RedactionCheck Check, string Message);
-
-public sealed record VerificationReport(IReadOnlyList<VerificationFailure> Failures, IReadOnlyList<string> Warnings)
-{
-    public bool Passed => Failures.Count == 0;
-
-    public bool Failed(RedactionCheck check) => Failures.Any(f => f.Check == check);
-}
-
 /// <summary>
 /// Checks a redacted file against its source without trusting how it was made (spike S5). It
 /// reads the output with both PDFium and qpdf: PDFium for what a reader shows (page text, objects,

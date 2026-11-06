@@ -6,6 +6,7 @@ using System.Text;
 using PdfSuite.Pdf.Abstractions;
 using PdfSuite.Pdf.Pdfium;
 using PdfSuite.Pdf.Qpdf;
+using PdfSuite.Pdf.Redaction;
 using PdfSuite.Pdf.Remote;
 
 namespace PdfSuite.Pdf.Worker;
@@ -107,6 +108,20 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
                 case MessageKind.GetEngineInfo:
                     GetEngineInfo(request);
                     break;
+                case MessageKind.Redact:
+                    Redact(request);
+                    break;
+                case MessageKind.Transform:
+                    Transform(request);
+                    break;
+                case MessageKind.GetMetadata:
+                    GetMetadata(request);
+                    break;
+                case MessageKind.CountDocumentsForTest when allowTestCommands:
+                    Span<byte> count = stackalloc byte[4];
+                    new PayloadWriter(count).WriteInt32(_documents.Count);
+                    MessageIO.Write(output, MessageKind.Ack, request.RequestId, count);
+                    break;
                 case MessageKind.AllocateForTest when allowTestCommands:
                     AllocateForTest(request);
                     break;
@@ -118,6 +133,15 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
         catch (PdfOpenException ex)
         {
             SendError(request.RequestId, WorkerErrorCode.OpenFailed, (int)ex.Error, ex.Message);
+        }
+        catch (QpdfException ex) when (ex.IsPasswordError)
+        {
+            SendError(request.RequestId, WorkerErrorCode.OpenFailed, (int)PdfOpenError.Password, ex.Message);
+        }
+        catch (QpdfException ex)
+        {
+            // qpdf's own message can quote the file's contents, so only its error code is passed on.
+            SendError(request.RequestId, WorkerErrorCode.StructureFailed, ex.Code, $"qpdf could not process the document (error {ex.Code}).");
         }
         catch (KeyNotFoundException)
         {
@@ -242,6 +266,133 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
         byte[] payload = new byte[PayloadWriter.SizeOf(qpdfVersion)];
         new PayloadWriter(payload).WriteString(qpdfVersion);
         MessageIO.Write(output, MessageKind.EngineInfo, request.RequestId, payload);
+    }
+
+    // Redaction runs here, not in the app, because it parses the untrusted source with both PDFium
+    // and qpdf (spike finding 37). Payload: [int32 n][n x (int32 page, 4 x double rect)]
+    // [int32 m][m x term] then the source PDF. Response: [int32 passed][int32 n][n x (int32 check,
+    // message)][int32 m][m x warning] then the redacted PDF, which is empty if verification failed.
+    // Messages and warnings can quote the document's text: they go to the app for the user, and
+    // are never logged.
+    private void Redact(in Message request)
+    {
+        var reader = new PayloadReader(request.Payload);
+        var areas = new RedactionArea[reader.ReadInt32()];
+        for (int i = 0; i < areas.Length; i++)
+        {
+            int page = reader.ReadInt32();
+            areas[i] = new RedactionArea(page, new PageRect(reader.ReadDouble(), reader.ReadDouble(), reader.ReadDouble(), reader.ReadDouble()));
+        }
+
+        var terms = new string[reader.ReadInt32()];
+        for (int i = 0; i < terms.Length; i++)
+        {
+            terms[i] = reader.ReadString() ?? string.Empty;
+        }
+
+        byte[] redacted;
+        VerificationReport report;
+        try
+        {
+            RedactionResult result = Redactor.Redact(reader.Remaining, areas, terms);
+            (redacted, report) = (result.Pdf, result.Report);
+        }
+        catch (RedactionFailedException ex)
+        {
+            (redacted, report) = ([], ex.Report);
+        }
+
+        byte[] header = new byte[12 + report.Failures.Sum(f => 4 + PayloadWriter.SizeOf(f.Message)) + report.Warnings.Sum(PayloadWriter.SizeOf)];
+        var writer = new PayloadWriter(header);
+        writer.WriteInt32(report.Passed ? 1 : 0);
+        writer.WriteInt32(report.Failures.Count);
+        foreach (VerificationFailure failure in report.Failures)
+        {
+            writer.WriteInt32((int)failure.Check);
+            writer.WriteString(failure.Message);
+        }
+
+        writer.WriteInt32(report.Warnings.Count);
+        foreach (string warning in report.Warnings)
+        {
+            writer.WriteString(warning);
+        }
+
+        MessageIO.Write(output, MessageKind.Redacted, request.RequestId, header, redacted);
+    }
+
+    // Whole-file operations through qpdf, which must not run in the app: some qpdf calls throw C++
+    // exceptions that end the process on Linux and macOS (spike finding 28).
+    // Payload: [int32 operation][password] then the operation's fields, then the PDF:
+    //   Encrypt:     [user password][owner password][int32 permission bits]
+    //   SetMetadata: [int32 n][n x (key, value or null to remove)]
+    //   Decrypt, Rewrite: nothing more
+    // Response: the new PDF.
+    private void Transform(in Message request)
+    {
+        var reader = new PayloadReader(request.Payload);
+        var operation = (TransformOperation)reader.ReadInt32();
+        string? password = reader.ReadString();
+        byte[] result;
+        switch (operation)
+        {
+            case TransformOperation.Encrypt:
+                {
+                    string user = reader.ReadString() ?? string.Empty, owner = reader.ReadString() ?? string.Empty;
+                    PdfPermissions permissions = PermissionBits.Decode(reader.ReadInt32());
+                    result = QpdfStructure.Encrypt(reader.Remaining, user, owner, permissions, password);
+                    break;
+                }
+
+            case TransformOperation.Decrypt:
+                result = QpdfStructure.Decrypt(reader.Remaining, password ?? string.Empty);
+                break;
+            case TransformOperation.SetMetadata:
+                {
+                    var values = new Dictionary<string, string?>();
+                    for (int count = reader.ReadInt32(); count > 0; count--)
+                    {
+                        values[reader.ReadString() ?? string.Empty] = reader.ReadString();
+                    }
+
+                    result = QpdfStructure.SetMetadata(reader.Remaining, values, password);
+                    break;
+                }
+
+            case TransformOperation.Rewrite:
+                result = QpdfStructure.Rewrite(reader.Remaining, password);
+                break;
+            default:
+                SendError(request.RequestId, WorkerErrorCode.InvalidRequest, 0, $"Unsupported operation {operation}.");
+                return;
+        }
+
+        MessageIO.Write(output, MessageKind.Transformed, request.RequestId, result);
+    }
+
+    // Payload: [password][int32 n][n x key] then the PDF. Response: [int32 n][n x (key, value)],
+    // for the requested keys the document has.
+    private void GetMetadata(in Message request)
+    {
+        var reader = new PayloadReader(request.Payload);
+        string? password = reader.ReadString();
+        var keys = new string[reader.ReadInt32()];
+        for (int i = 0; i < keys.Length; i++)
+        {
+            keys[i] = reader.ReadString() ?? string.Empty;
+        }
+
+        IReadOnlyDictionary<string, string> values = QpdfStructure.GetMetadata(reader.Remaining, keys, password);
+        byte[] payload = new byte[4 + values.Sum(v => PayloadWriter.SizeOf(v.Key) + PayloadWriter.SizeOf(v.Value))];
+        var writer = new PayloadWriter(payload);
+        writer.WriteInt32(values.Count);
+        foreach (var (key, value) in values)
+        {
+            writer.WriteString(key);
+            writer.WriteString(value);
+        }
+
+        MessageIO.Write(output, MessageKind.Metadata, request.RequestId, payload);
     }
 
     // Payload: [docId][int32 n][n x int32 page][printer][title][output][int32 length][DEVMODE bytes]; strings via WriteString.

@@ -8,8 +8,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PdfSuite.Pdf.Pdfium\PdfSuite.Pdf.Pdfium.csproj" />
-    <!-- Loaded only for engine info so far; redaction and encryption move here in Milestone 1 (spike results, finding 37). -->
+    <!-- qpdf operations and redaction run here, never in the app (spike results, findings 28 and 37). -->
     <ProjectReference Include="..\PdfSuite.Pdf.Qpdf\PdfSuite.Pdf.Qpdf.csproj" />
+    <ProjectReference Include="..\PdfSuite.Pdf.Redaction\PdfSuite.Pdf.Redaction.csproj" />
     <ProjectReference Include="..\PdfSuite.Pdf.Remote\PdfSuite.Pdf.Remote.csproj" />
   </ItemGroup>
 

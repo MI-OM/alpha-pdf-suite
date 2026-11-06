@@ -9,7 +9,7 @@ Results of the technical spike in `docs/06-SPIKE-PLAN.md`. Each item records its
 | S2 Document-text accessibility | Built; verified on Windows through UI Automation | **Promising.** The tree and keyboard reading behave as designed, with one focus event per key, and there is no measurable frame-pacing cost (A/B benchmark). Real screen-reader checks (NVDA, Narrator) are pending with the maintainer; Orca and VoiceOver need Linux and a Mac |
 | S3 Printing | Windows done; macOS and Linux planned and estimated | **Pass on Windows.** The worker prints with exact page geometry and vector output, but slowly: about 1 s and 256 KB per page with Print to PDF. macOS and Linux have a researched plan and estimates, not yet a proof of concept |
 | S4 qpdf from .NET | Done | **Pass on all three OSes** (CI at `62a2efe`, run 41327508609): AES-256 encryption, decryption, Unicode metadata, and full rewrites, all checked with PDFium as an independent reader |
-| S5 Redaction method | Done; worker integration open; ADR-0006 proposed | **Pass on all three OSes** (CI at `29ed037`, run 41338226605). No canary survives in any of the 7 canary fixtures (13 canaries), and all 7 negative controls are rejected, each by the check meant for it. Glyph-level probe: **yes** for the three fonts tried, with caveats for real-world fonts (finding 36). Still to do: run it in the worker, and write ADR-0006 |
+| S5 Redaction method | Done; runs in the worker since 2026-11-06; ADR-0006 proposed | **Pass on all three OSes** (CI at `29ed037`, run 41338226605). No canary survives in any of the 7 canary fixtures (13 canaries), and all 7 negative controls are rejected, each by the check meant for it. Glyph-level probe: **yes** for the three fonts tried, with caveats for real-world fonts (finding 36). Still to do: run it in the worker, and write ADR-0006 |
 | S6 Packaging | Done; ADR-0005 proposed | **Pass on all three OSes** (Package workflow at `81ab077`, run 41356497705). The MSIX, DMG, AppImage and .deb each installed on a fresh runner and launched the S1 viewer, which rendered the 2,000-page fixture and loaded qpdf in the worker. Packages are NativeAOT and 18–24 MB. Over two runs, a first launch after installing reached the window in 0.07–0.62 s and the first page in 0.15–2.4 s; the AppImage took 1.7–3.6 s to the window. Not yet distributable: the MSIX has a test certificate, and Gatekeeper rejects the DMG, which is not notarised |
 
 ## Go/no-go (2026-11-01)
@@ -38,7 +38,7 @@ The spike ran from 2026-10-21 to 2026-11-01. This section applies the rules in s
   - the product name
 
 **Carried into Milestone 1 as work:**
-- redaction and qpdf operations in the worker (finding 37)
+- redaction and qpdf operations in the worker (finding 37): **done 2026-11-06**, see "After the spike"
 - worker limits on Linux and macOS (finding 12)
 - reading order (finding 16), and hiding hidden-layer text from screen readers (finding 32)
 - proofs of concept for macOS and Linux printing
@@ -168,7 +168,7 @@ Machine: i5-1235U, 12 logical cores, Windows 11 x64, scaling 1.0, 1000 × 701 DI
 10. **Software rendering is just within budget.** p95 31.2–31.5 ms against 33 ms: frames alternate between 16.7 ms and 33 ms. Machines and VMs without GPU acceleration will be close to the limit. This needs measuring on Linux (S1) and in remote-desktop sessions.
 11. **The tile cache probably dominates app memory.** The app's working set is about 600 MB with GPU rendering, against 468 MB combined with software rendering. That fits the 384 MB tile budget plus GPU-side copies of the tiles, but this is inferred, not profiled. A smaller budget is an easy lever if memory matters more than revisiting pages.
 12. **Worker memory limits exist on Windows only.** The Job Object cap is verified by a test: a 512 MB allocation is refused under a 256 MB cap, and the worker keeps serving. No limit is applied yet on Linux or macOS. `RLIMIT_AS` is expected to conflict with the .NET runtime's large address-space reservations (not yet tested), so cgroups on Linux are the likely route; macOS is to be investigated.
-13. **A cancelled open can leave a document open in the worker until it exits.** This is acceptable for the spike; it needs a close-on-late-arrival rule before Milestone 1.
+13. **A cancelled open can leave a document open in the worker until it exits.** This is acceptable for the spike; it needs a close-on-late-arrival rule before Milestone 1. **Fixed 2026-11-06:** the client closes the document when the late answer arrives.
 14. **A .NET patch release broke CI with no code change.**
     - On 2026-10-25, .NET 10.0.14 and SDK 10.0.403 were released.
     - With `global.json` set to `rollForward: latestFeature`, `actions/setup-dotnet` installs the newest 10.0 SDK.
@@ -478,7 +478,7 @@ CI at `29ed037` (run 41338226605) passed on Windows x64, Linux x64, and macOS ar
 
 ### Still open for S5
 - ADR-0006, v1 redaction method and verification: proposed (`docs/adr/0006-v1-redaction-method.md`)
-- moving redaction into the worker
+- moving redaction into the worker: done 2026-11-06 ("After the spike")
 
 ## S6 — Packaging in CI (2026-11-01)
 
@@ -609,3 +609,42 @@ The Package workflow at `81ab077` (run 41356497705) passed on all three OSes. Th
 - **The AppImage:** its slow first launch (finding 48), and the LGPL obligations it brings (finding 45).
 - **A real Linux desktop:** the Linux packages ran under Xvfb only. A Wayland session with XWayland is still to be tried, together with the S1 Linux measurements.
 - **Other architectures:** packages for Linux arm64, macOS x64 and Windows arm64 were not attempted.
+
+## After the spike (2026-11-06)
+Work done after the spike, which the go/no-go section carried into Milestone 1. It does not depend on any decision still open.
+
+### Redaction and qpdf operations in the worker (findings 13, 28 and 37)
+- **New worker requests:**
+  - `Redact` returns the redacted file and the verifier's report. If verification fails, it returns the report and no file.
+  - `Transform` covers encrypt, decrypt, set metadata and rewrite.
+  - `GetMetadata` reads document information.
+- **What travels:** each request carries the whole document, so it does not depend on what the worker has open.
+- **Errors:**
+  - A wrong or missing password is reported like a password-protected open.
+  - Any other qpdf failure crosses the process boundary as its error code only, because qpdf's own message can quote the file.
+- **Client:** `WorkerClient` has `RedactAsync`, `EncryptAsync`, `DecryptAsync`, `SetMetadataAsync`, `RewriteAsync` and `GetMetadataAsync`, with hang allowances sized for long operations.
+  - The worker handles one request at a time, so a long redaction holds up rendering for any document open in the same worker. Whether heavy operations get their own worker is a Milestone 5 design question.
+- **Shared types:** the redaction and permission types moved to `PdfSuite.Pdf.Abstractions`, so the app needs no engine reference to ask for these operations.
+- **No document text in exception messages:** `RedactionFailedException`'s message now names only the failed checks, because exception messages end up in logs. The report holds the details, which can quote the document.
+- **Finding 13 fixed:** when an open is cancelled after the worker has started it, the client closes the document as soon as the late answer arrives.
+
+**Evidence (Windows, development machine):**
+- **9 new tests,** each through a real worker process:
+  - Redaction gives byte-identical output to redacting in-process, and returns the verifier's warnings.
+  - A failing verification returns its failures and no file, and the exception message does not contain the secret.
+  - Encryption needs the password in PDFium, and decryption removes it. A wrong password is a password error.
+  - Metadata and rewrites match in-process output byte for byte.
+  - Invalid data is a qpdf failure, and the worker keeps serving.
+  - 30 opens cancelled at different moments leave no document open.
+- **The finding 13 test was checked against the bug:** with the fix disabled, it failed in 3 runs out of 3, leaving 11–12 of the 30 documents open.
+- **Totals:** 71 tests pass (3 explicit probes skipped), and the Release build has 0 warnings.
+- **Not verified yet:** the NativeAOT publish of the worker with these requests. See finding 50.
+
+### Findings
+50. **NuGet's audit stopped the NativeAOT publish: the pinned runtime has a high-severity vulnerability.**
+    - CVE-2026-111497 is an out-of-bounds write in .NET's Brotli decoder, published as an advisory on 2026-11-03. It affects .NET 10 before 10.0.14, which shipped with SDK 10.0.403 on 2026-10-25.
+    - The pin is SDK 10.0.402, runtime 10.0.13.
+    - **The audit caught it** because a publish restores the ILCompiler package, and NuGet audit warnings are errors.
+    - **The CI build does not reach this audit,** because its locked restore has no runtime packages. So the next Package workflow run would fail, and every package built from the current pin ships the vulnerable runtime.
+    - This is the monthly SDK bump that finding 14 asks for, made urgent.
+

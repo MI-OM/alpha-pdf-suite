@@ -1,19 +1,15 @@
 using System.Runtime.InteropServices;
+using PdfSuite.Pdf.Abstractions;
 
 namespace PdfSuite.Pdf.Qpdf;
-
-/// <summary>What a user may do with an encrypted document without the owner password.</summary>
-public sealed record PdfPermissions(
-    bool Print = true,
-    bool CopyText = true,
-    bool Modify = false,
-    bool AnnotateAndFillForms = true,
-    bool Assemble = false);
 
 /// <summary>A qpdf failure. <see cref="Code"/> is qpdf's error code (for example 4 = wrong password).</summary>
 public sealed class QpdfException(int code, string message) : Exception(message)
 {
     public int Code { get; } = code;
+
+    /// <summary>The document needs a password, or the one given is wrong.</summary>
+    public bool IsPasswordError => Code == QpdfFile.PasswordError;
 }
 
 /// <summary>

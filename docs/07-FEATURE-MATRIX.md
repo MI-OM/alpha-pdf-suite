@@ -93,7 +93,7 @@ A platform is declared supported only when PRD §6's conditions are met: a clean
 
 | Capability | Release | Status | Notes |
 |---|---|---|---|
-| Edit title, author, subject, keywords | v1 | Prototyped (engine only) | Through qpdf's object API, with Unicode checked by PDFium (S4). No user interface |
+| Edit title, author, subject, keywords | v1 | Prototyped (no user interface) | Through qpdf's object API, in the worker, with Unicode checked by PDFium (S4) |
 | Add images to pages | v1 | Not started | — |
 | Explain why content cannot be edited; offer Save As | v1 | Not started | — |
 | Replace or delete existing images | v2 | Not started | — |
@@ -114,9 +114,9 @@ A platform is declared supported only when PRD §6's conditions are met: a clean
 | Capability | Release | Status | Notes |
 |---|---|---|---|
 | Open password-protected PDFs | v1 | Prototyped (engine only) | See 4.1 |
-| AES-256 encryption and permissions | v1 | Prototyped (engine only) | Through qpdf. Verified on all three OSes, with PDFium refusing wrong passwords (S4). No user interface |
+| AES-256 encryption and permissions | v1 | Prototyped (no user interface) | Through qpdf, in the worker. Verified on all three OSes, with PDFium refusing wrong passwords (S4) |
 | Metadata sanitisation workflow | v1 | Not started | The redaction scrub removes document-level metadata (S5) |
-| Redaction (rasterise, rewrite, scrub, verify) | v1 | Prototyped (library only) | Every canary removed; every negative control rejected; all three OSes (S5; ADR-0006). No user interface. Runs in the app process, and must move to the worker |
+| Redaction (rasterise, rewrite, scrub, verify) | v1 | Prototyped (no user interface) | Every canary removed; every negative control rejected; all three OSes (S5; ADR-0006). Runs in the worker |
 | Redaction that keeps vector content and text | Later | Not started | A glyph-level probe works for some fonts (finding 36) |
 | Warn about embedded files, suspicious links, active content | v1 | Not started | — |
 | Never execute embedded files, scripts or links automatically | v1 | Prototyped (by design) | The PDFium build has no JavaScript engine. The spike viewer does not follow links or open attachments at all |

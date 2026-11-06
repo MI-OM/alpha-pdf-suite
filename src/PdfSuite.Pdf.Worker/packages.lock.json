@@ -26,6 +26,13 @@
           "PdfSuite.Pdf.Abstractions": "[1.0.0, )"
         }
       },
+      "pdfsuite.pdf.redaction": {
+        "type": "Project",
+        "dependencies": {
+          "PdfSuite.Pdf.Pdfium": "[1.0.0, )",
+          "PdfSuite.Pdf.Qpdf": "[1.0.0, )"
+        }
+      },
       "pdfsuite.pdf.remote": {
         "type": "Project",
         "dependencies": {
