@@ -136,8 +136,9 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
                 // into this text are character indexes in the text page, which the rectangle calls use.
                 // (A character outside the Basic Multilingual Plane would shift them; acceptable for the spike.)
                 bool[]? hidden = FindHiddenCharacters(textPage, count);
-                var lines = new List<TextLine>();
-                int start = 0;
+                int[]? ranks = ReadingRanks(GetLoadedPage(pageIndex), textPage, count);
+                var lines = new List<(TextLine Line, int Rank)>();
+                int start = 0, previousRank = -1;
                 for (int i = 0; i <= count; i++)
                 {
                     if (i < count && text[i] is not ('\r' or '\n'))
@@ -147,13 +148,18 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
 
                     if (i > start && VisibleLine(textPage, text, start, i, hidden, pageHeight) is { } line)
                     {
-                        lines.Add(line);
+                        // A line with no tagged text, such as an artifact, stays after the tagged line before it.
+                        int rank = ranks is null ? -1 : LineRank(ranks, hidden, start, i);
+                        previousRank = rank >= 0 ? rank : previousRank;
+                        lines.Add((line, previousRank));
                     }
 
                     start = i + 1;
                 }
 
-                return lines;
+                // A tagged page is read in its structure tree's order (spike finding 16). The sort
+                // is stable, so lines of the same marked content keep their order on the page.
+                return ranks is null ? [.. lines.Select(l => l.Line)] : [.. lines.OrderBy(l => l.Rank).Select(l => l.Line)];
             }
             finally
             {
@@ -252,6 +258,100 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
 
         string lineText = visible.ToString().Trim();
         return lineText.Length > 0 && bounds is { } r ? new TextLine(lineText, r.Left, r.Top, r.Right, r.Bottom) : null;
+    }
+
+    // For a tagged page, each character's place in reading order: the position of its marked
+    // content in a depth-first walk of the page's structure tree, or -1 for untagged characters.
+    // Null when the page has no structure tree with marked content. Untagged pages keep the
+    // engine's order, which is the order the file draws them.
+    private static int[]? ReadingRanks(nint page, nint textPage, int count)
+    {
+        nint tree = PdfiumNative.FPDF_StructTree_GetForPage(page);
+        if (tree == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var rankOfContent = new Dictionary<int, int>();
+            int children = PdfiumNative.FPDF_StructTree_CountChildren(tree);
+            for (int c = 0; c < children; c++)
+            {
+                WalkStructure(PdfiumNative.FPDF_StructTree_GetChildAtIndex(tree, c), rankOfContent, depth: 0);
+            }
+
+            if (rankOfContent.Count == 0)
+            {
+                return null;
+            }
+
+            var ranks = new int[count];
+            var byObject = new Dictionary<nint, int>();
+            for (int k = 0; k < count; k++)
+            {
+                nint textObject = PdfiumNative.FPDFText_GetTextObject(textPage, k);
+                if (textObject == 0)
+                {
+                    ranks[k] = -1;
+                    continue;
+                }
+
+                if (!byObject.TryGetValue(textObject, out int rank))
+                {
+                    int content = PdfiumNative.FPDFPageObj_GetMarkedContentID(textObject);
+                    rank = content >= 0 && rankOfContent.TryGetValue(content, out int found) ? found : -1;
+                    byObject[textObject] = rank;
+                }
+
+                ranks[k] = rank;
+            }
+
+            return ranks;
+        }
+        finally
+        {
+            PdfiumNative.FPDF_StructTree_Close(tree);
+        }
+    }
+
+    // Records marked-content IDs in the order a reader meets them. The depth limit guards against
+    // malformed trees.
+    private static void WalkStructure(nint element, Dictionary<int, int> rankOfContent, int depth)
+    {
+        if (element == 0 || depth > 256)
+        {
+            return;
+        }
+
+        int children = PdfiumNative.FPDF_StructElement_CountChildren(element);
+        for (int i = 0; i < children; i++)
+        {
+            nint child = PdfiumNative.FPDF_StructElement_GetChildAtIndex(element, i);
+            if (child != 0)
+            {
+                WalkStructure(child, rankOfContent, depth + 1);
+            }
+            else if (PdfiumNative.FPDF_StructElement_GetChildMarkedContentID(element, i) is int content and >= 0)
+            {
+                rankOfContent.TryAdd(content, rankOfContent.Count);
+            }
+        }
+    }
+
+    // The earliest reading position of the line's visible characters, or -1 if none is tagged.
+    private static int LineRank(int[] ranks, bool[]? hidden, int start, int end)
+    {
+        int best = -1;
+        for (int k = start; k < end; k++)
+        {
+            if (ranks[k] >= 0 && hidden?[k] != true && (best < 0 || ranks[k] < best))
+            {
+                best = ranks[k];
+            }
+        }
+
+        return best;
     }
 
     // Which characters are in a layer that is off by default, or null when none are. Characters

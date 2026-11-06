@@ -242,6 +242,32 @@ internal static unsafe partial class PdfiumNative
     internal static partial int FPDFPageObjMark_GetParamStringValue(nint mark, string key, char* buffer, CULong bufferLength, CULong* outLength);
 
     [LibraryImport(Library)]
+    internal static partial int FPDFPageObj_GetMarkedContentID(nint pageObject);
+
+    // Structure tree (tagged PDF). A child that is marked content rather than an element comes
+    // back from GetChildAtIndex as null, and its ID from GetChildMarkedContentID.
+    [LibraryImport(Library)]
+    internal static partial nint FPDF_StructTree_GetForPage(nint page);
+
+    [LibraryImport(Library)]
+    internal static partial void FPDF_StructTree_Close(nint structTree);
+
+    [LibraryImport(Library)]
+    internal static partial int FPDF_StructTree_CountChildren(nint structTree);
+
+    [LibraryImport(Library)]
+    internal static partial nint FPDF_StructTree_GetChildAtIndex(nint structTree, int index);
+
+    [LibraryImport(Library)]
+    internal static partial int FPDF_StructElement_CountChildren(nint structElement);
+
+    [LibraryImport(Library)]
+    internal static partial nint FPDF_StructElement_GetChildAtIndex(nint structElement, int index);
+
+    [LibraryImport(Library)]
+    internal static partial int FPDF_StructElement_GetChildMarkedContentID(nint structElement, int index);
+
+    [LibraryImport(Library)]
     internal static partial int FPDFText_GetCharOrigin(nint textPage, int index, double* x, double* y);
 
     [LibraryImport(Library)]

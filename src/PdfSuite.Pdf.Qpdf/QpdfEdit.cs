@@ -189,6 +189,8 @@ public sealed unsafe class QpdfEdit : IDisposable
 
     public QpdfObject NewInteger(long value) => Checked(QpdfNative.qpdf_oh_new_integer(Handle, value));
 
+    public QpdfObject NewBoolean(bool value) => Checked(QpdfNative.qpdf_oh_new_bool(Handle, value ? 1 : 0));
+
     /// <summary>A new indirect stream holding <paramref name="data"/> unfiltered; set its dictionary entries with <see cref="StreamDictionary"/>.</summary>
     public QpdfObject NewStream(ReadOnlySpan<byte> data)
     {

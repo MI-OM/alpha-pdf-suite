@@ -60,7 +60,7 @@
 ## 4. Decision and rationale
 **Proposed:**
 1. **Framework:** Avalonia 12.1.x on .NET 10 LTS, using MIT packages only. The SDK stays pinned exactly in `global.json` and is bumped monthly, after Patch Tuesday.
-2. **Document text:** expose it through focus-based reading elements per page and line (design E), until a text pattern exists upstream. Track #22178 and contribute to it where possible. Reading order needs its own decision before Milestone 1 (finding 16).
+2. **Document text:** expose it through focus-based reading elements per page and line (design E), until a text pattern exists upstream. Track #22178 and contribute to it where possible. Tagged pages are read in their structure tree's order (since 2026-11-06); reading order for untagged pages needs its own decision before Milestone 1 (finding 16).
 3. **Printing:**
    - **Windows:** native: the Win32 dialog in the app, and the worker renders.
    - **Linux:** xdg-desktop-portal Print, with CUPS `lp` where the portal is missing.

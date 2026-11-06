@@ -40,7 +40,7 @@ The spike ran from 2026-10-21 to 2026-11-01. This section applies the rules in s
 **Carried into Milestone 1 as work:**
 - redaction and qpdf operations in the worker (finding 37): **done 2026-11-06**, see "After the spike"
 - worker limits on Linux and macOS (finding 12)
-- reading order (finding 16), and hiding hidden-layer text from screen readers (finding 32): the second is **done 2026-11-06** ("After the spike")
+- reading order (finding 16), and hiding hidden-layer text from screen readers (finding 32): **both done 2026-11-06** for what the document declares ("After the spike"). Reading order for untagged pages still needs a decision
 - proofs of concept for macOS and Linux printing
 - Orca and VoiceOver checks, and the S1 measurements on Linux and macOS
 - locked publish restores (finding 42)
@@ -243,6 +243,7 @@ Orca (Linux) and VoiceOver (macOS) are untested. They need a Linux environment a
     - For untagged PDFs, what a screen-reader user hears therefore depends on how the file was produced.
     - Sorting lines top-to-bottom would break multi-column pages, so the spike keeps the engine's order.
     - **v1 needs a reading-order decision:** use the structure tree for tagged PDFs, and layout analysis or a column-aware heuristic for untagged ones. PdfPig (Apache-2.0) has layout analysis and is a candidate.
+    - **Tagged pages done 2026-11-06:** they are read in structure-tree order ("After the spike"). Untagged pages still follow the file, pending the layout-analysis decision.
 17. **Keyboard focus is a viable route to document text without a text pattern.** It is cross-platform in principle, because it relies only on focus events. It has known limits, which the manual checks will size:
     - no continuous "say all" (each line is its own focus stop)
     - no character or word navigation through the document, beyond what a reader's review cursor offers on the focused line
@@ -678,6 +679,19 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
   - `HiddenLayerNames` handles both `/BaseState` modes.
   - A name shared with a visible layer is not hidden.
 - **Totals:** 78 tests pass, and the fuzz test's results are unchanged.
+
+### Reading order for tagged pages (finding 16)
+- **What a tagged page declares:** the order it should be read in. Its structure tree lists marked content (`/P <</MCID n>> BDC … EMC`) by ID in that order.
+- **What PDFium exposes:** the page's structure tree (`FPDF_StructTree_GetForPage`) and each text object's marked-content ID.
+- **How the reading lines use it:** `GetTextLines` walks the tree depth-first to rank the IDs, gives each line the rank of its earliest tagged character, and sorts the lines by rank.
+  - Lines with no tag, such as artifacts like running headers, stay right after the tagged line before them. Nothing is dropped.
+  - The sort is stable, so lines of the same marked content keep their order on the page.
+- **When it applies:** only when the file says it is tagged (`/MarkInfo /Marked true`); PDFium ignores the structure tree otherwise. Untagged pages keep the order the file draws them.
+- **Evidence:**
+  - A test page draws a running header, then paragraph 2, then paragraph 1, and its structure tree puts paragraph 1 first. It reads header, paragraph 1, paragraph 2.
+  - Negative control: the same page without the tree reads in drawing order.
+  - 80 tests pass.
+- **Still open:** reading order for untagged pages, which needs layout analysis (a dependency decision). Whether artifacts such as running headers should be read at all is a product decision; PDF/UA says they are not content.
 
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:

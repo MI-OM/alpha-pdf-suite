@@ -130,6 +130,9 @@ internal static unsafe partial class QpdfNative
     internal static partial uint qpdf_oh_new_integer(nint qpdf, long value);
 
     [LibraryImport(Library)]
+    internal static partial uint qpdf_oh_new_bool(nint qpdf, int value);
+
+    [LibraryImport(Library)]
     internal static partial uint qpdf_oh_new_null(nint qpdf);
 
     [LibraryImport(Library)]

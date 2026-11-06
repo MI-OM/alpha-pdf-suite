@@ -140,7 +140,7 @@ A platform is declared supported only when PRD §6's conditions are met: a clean
 | Capability | Release | Status | Notes |
 |---|---|---|---|
 | Keyboard navigation and accessible controls | v1 | Prototyped (reader keys) | Reading keys and standard buttons only |
-| Screen-reader access to document text | v1 goal | Prototyped (Windows) | A focusable element per line. Verified with UI Automation; real screen readers pending (S2). No "say all", character navigation or selection (finding 17). Reading order follows the file, not the layout (finding 16). Text in layers that are off by default is not read, except in a few rare structures (finding 32) |
+| Screen-reader access to document text | v1 goal | Prototyped (Windows) | A focusable element per line. Verified with UI Automation; real screen readers pending (S2). No "say all", character navigation or selection (finding 17). Tagged pages are read in their structure order; untagged pages in the order the file draws them (finding 16). Text in layers that are off by default is not read, except in a few rare structures (finding 32) |
 | Basic tagged-PDF checks | v1 | Not started | — |
 | PDF/A and PDF/UA validation with veraPDF (optional) | v1 | Not started | Machine checks only; needs Java |
 | Font diagnostics, reading-order inspection, simple PDF/A conversion | v2 | Not started | — |
