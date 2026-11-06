@@ -39,7 +39,7 @@
 - **Supply chain:**
   - Package versions are pinned centrally, with lock files and locked restores in CI.
   - Native binaries from outside NuGet are pinned by SHA-256: qpdf, appimagetool, and the AppImage runtime.
-  - GitHub Actions are not yet pinned to commit SHAs.
+  - GitHub Actions are pinned to commit SHAs (since 2026-11-06).
   - Publishes restore packages that no lock file covers (finding 42; ADR-0005).
 
 ## 4. Decision and rationale
@@ -76,7 +76,7 @@
   - the .NET runtime notices
   - the AppImage LGPL obligations
   - reviewer and approval dates for every inventory row
-- **Security:** the telemetry rule and the pinning rules are supply-chain controls as much as licence ones. Pinning GitHub Actions to commit SHAs, and locking publish restores, remain open.
+- **Security:** the telemetry rule and the pinning rules are supply-chain controls as much as licence ones. GitHub Actions are pinned to commit SHAs; locking publish restores remains open.
 
 ## 7. Reversibility and migration cost
 - **The project licence:** changing it is cheap before outside contributions arrive, and needs every contributor's consent afterwards. That is why it should be decided before the repository takes contributions.

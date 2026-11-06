@@ -94,5 +94,5 @@ NuGet audit (`NuGetAuditMode=all`, warnings treated as errors) reported no known
 - [ ] The .NET runtime's third-party notices (`THIRD-PARTY-NOTICES.TXT` in dotnet/runtime), which NativeAOT compiles into both executables.
 - [ ] AppImage: the LGPL-2.1 notice and source offer for libfuse in the runtime, or no AppImage. Verify the runtime's release signature.
 - [ ] Lock the packages that publishes restore for each runtime identifier, or record why not (spike results, finding 42).
-- [ ] Pin GitHub Actions to commit SHAs instead of major-version tags.
+- [x] Pin GitHub Actions to commit SHAs instead of major-version tags (2026-11-06; the release is noted beside each SHA).
 - [ ] Reviewer and approval date for every row above.
