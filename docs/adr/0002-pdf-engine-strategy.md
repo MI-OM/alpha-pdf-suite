@@ -83,7 +83,7 @@
 ## 8. Validation experiment
 - **Done in the spike:** S1, S3, S4 and S5 in CI on all three OSes.
 - **Not done yet:**
-  - fuzzing the parse and transform paths (PRD §8)
+  - continuous, coverage-guided fuzzing of the parse and transform paths (PRD §8). A seeded test of 300 mutated documents runs in CI (spike finding 51)
   - a first monthly PDFium bump done as a routine, with the lock files and fixtures
   - an experiment building PDFium from source (decides GDI text, PartitionAlloc and Flathub together)
   - a qpdf build with native crypto only, for Linux

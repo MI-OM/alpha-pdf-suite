@@ -8,6 +8,10 @@ on:
     branches: [main]
     paths-ignore: ['docs/**', '**/*.md']
   workflow_dispatch:
+  # Weekly. Only publishes restore the runtime and NativeAOT packages, so this is where their
+  # advisories surface: CVE-2026-111497 was found only by a publish (spike results, finding 50).
+  schedule:
+    - cron: "37 6 * * 1"
 
 permissions:
   contents: read

@@ -84,7 +84,7 @@
 - **Not done yet:**
   - CPU-time limits on every OS
   - an OS sandbox experiment on each OS: AppContainer or a restricted token on Windows, the App Sandbox or `sandbox-exec` profiles on macOS, seccomp or Landlock on Linux
-  - fuzzing the worker through the protocol
+  - fuzzing the protocol itself. Mutated documents already go through the worker in CI (spike finding 51)
 
 ## 9. Conditions that would cause reconsideration
 - **Tile throughput** becomes the bottleneck on high-DPI displays.

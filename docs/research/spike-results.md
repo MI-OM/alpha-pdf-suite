@@ -297,6 +297,7 @@ Pass: steps 2–5 work in both readers. Record what was heard for each step here
 - **Worker test** (`Print_ToMicrosoftPrintToPdf_ProducesEveryPageAtTheRightSize`) prints `simple-text.pdf` to Microsoft Print to PDF with an output file. It checks three pages, 612 × 792 pt, ink where the heading is, and a blank margin. It is skipped where that printer is not installed.
   - It passes locally.
   - CI at `842f7f8` (run 41196193897) is green on all three OSes. Whether the test ran or skipped on the GitHub Windows runner is not visible without signing in to read the logs.
+  - **Settled 2026-11-06:** the test summary in the Windows job at `2357e4e` shows 71 passed and only the 3 explicit probes skipped, so it runs and passes on the GitHub Windows runner.
 - **Dialog check** (`tools/spike/s3-print-dialog-check.ps1`, passed):
   1. Ctrl+P opens the dialog.
   2. The script confirms "Microsoft Print to PDF" is selected (it never presses Print otherwise).
@@ -655,7 +656,22 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
 - **Test:** the memory-limit test now runs on every OS, with the outcome each one should have.
   - Windows and Linux must refuse a 512 MB allocation under a 256 MB cap, then serve a 32 MB one.
   - macOS must stop a worker that holds 768 MB.
-  - It passes on Windows. The Linux and macOS results come from CI.
+  - It passes on all three OSes (CI at `2357e4e`, run 42163460286). On Linux and macOS, 70 tests passed and 4 were skipped (the 3 explicit probes, and the Windows-only print test), so it ran there.
+
+### Fuzz tests, and a weekly audit
+- **`FuzzTests`, using a fixed seed** so every run tries the same cases:
+  - **The content-stream lexer:** 20,000 random inputs, biased towards its special characters. It never throws, and never returns more bytes than it was given.
+  - **A round trip:** 5,000 random strings, written as literal and hex strings, come back exactly.
+  - **300 mutated fixtures through a real worker:** each is opened, rendered, read for text, then rewritten with qpdf.
+    - An open must end in a document or a `PdfOpenException`.
+    - Errors on a page are allowed, because the view handles them.
+    - Worker crashes are counted, not failed: they would be engine bugs, contained by the worker.
+- **Weekly runs:** CI and the Package workflow also run every Monday, so NuGet's audit sees new advisories when nothing has changed. GitHub disables schedules in a repository with no activity for 60 days.
+
+**Evidence (Windows):**
+- **Mutated fixtures:** 204 of 300 opened and 96 were refused as damaged. One first page could not be drawn. qpdf rewrote 237 and refused 63.
+- **No worker crashed.**
+- **The fuzz tests take 2–4 s.**
 
 ### Findings
 50. **NuGet's audit stopped the NativeAOT publish: the pinned runtime has a high-severity vulnerability.**
@@ -668,4 +684,12 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
       - Only `Microsoft.NET.ILLink.Tasks` changed in the lock files.
       - The audit then passed, and so did the NativeAOT publish, all 71 tests, and the smoke test.
       - Local launch times were slower than in S6 (0.26–0.40 s to the window, warm), on a busy machine waiting for a restart after the install. The Package workflow on clean runners is the comparison.
+51. **The fuzzer found damaged documents that could have crashed the app at open.**
+    - **What happens:** for 23 of the 300 mutated fixtures, PDFium loaded the file but could not read a page's size.
+    - **The bug:** the worker threw a generic error, which reached the app as a `WorkerException`. The app's open handler did not catch that type, so the exception would have escaped an async event handler.
+    - **Fixed:**
+      - The worker now reports such a document as damaged (`Format`), which the app already explains.
+      - The app also treats any worker error at open as a file it could not use.
+    - **The test guards it:** with the worker fix removed, the fuzz test fails on this case.
+    - **Open design question:** other viewers show the pages they can read. Refusing the whole document is the safe choice for now. Showing readable pages is a UX decision for the reader milestones.
 

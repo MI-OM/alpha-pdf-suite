@@ -152,8 +152,9 @@ internal sealed class MainWindow : Window
         {
             ShowMessage("This document is password-protected. Password entry is not part of this spike build.");
         }
-        catch (PdfOpenException)
+        catch (Exception ex) when (ex is PdfOpenException or WorkerException)
         {
+            // Any other error the worker reports while opening also means this file could not be used.
             ShowMessage("We couldn't open this PDF. The file may be damaged, unsupported, or inaccessible.");
         }
         catch (Exception ex) when (ex is WorkerExitedException or Win32Exception or InvalidOperationException)

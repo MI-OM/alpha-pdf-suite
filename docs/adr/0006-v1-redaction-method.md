@@ -104,7 +104,7 @@ Spike item S5 (spike results: S5 evidence, and findings 30–37):
 - **Done in the spike:** the canary fixtures and negative controls, on all three OSes.
 - **Not done yet:**
   - a real-world corpus: scanned and born-digital files, CJK fonts, Type 3 fonts, forms, and tagged PDFs
-  - fuzzing the content-stream lexer and the verifier
+  - fuzzing the verifier on malformed output. The content-stream lexer is fuzzed in CI (spike results, "After the spike")
   - the redaction UI flow and its copy
   - performance on documents with many redacted pages
   - OCR restoration of the remaining text

@@ -180,22 +180,29 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
         int passwordLength = reader.ReadInt32();
         string? password = passwordLength < 0 ? null : Encoding.UTF8.GetString(reader.ReadBytes(passwordLength));
         IPdfDocument document = _engine.Open(reader.Remaining, password);
-
-        int id = _nextDocumentId++;
-        _documents[id] = document;
         int pageCount = document.PageCount;
-
         byte[] payload = new byte[8 + (pageCount * 16)];
         var writer = new PayloadWriter(payload);
-        writer.WriteInt32(id);
+        writer.WriteInt32(_nextDocumentId);
         writer.WriteInt32(pageCount);
-        for (int i = 0; i < pageCount; i++)
+        try
         {
-            PageSize size = document.GetPageSize(i);
-            writer.WriteDouble(size.Width);
-            writer.WriteDouble(size.Height);
+            for (int i = 0; i < pageCount; i++)
+            {
+                PageSize size = document.GetPageSize(i);
+                writer.WriteDouble(size.Width);
+                writer.WriteDouble(size.Height);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // PDFium loaded the file but cannot read one of its pages, so it is damaged. Found by
+            // fuzzing: reported as a generic error, it was one the app did not expect at open.
+            document.Dispose();
+            throw new PdfOpenException(PdfOpenError.Format);
         }
 
+        _documents[_nextDocumentId++] = document;
         MessageIO.Write(output, MessageKind.Opened, request.RequestId, payload);
     }
 

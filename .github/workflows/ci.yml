@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Weekly, so NuGet's audit sees new advisories even when nothing changes here.
+  schedule:
+    - cron: "17 6 * * 1"
 
 permissions:
   contents: read
