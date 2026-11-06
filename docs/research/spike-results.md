@@ -638,7 +638,7 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
   - 30 opens cancelled at different moments leave no document open.
 - **The finding 13 test was checked against the bug:** with the fix disabled, it failed in 3 runs out of 3, leaving 11–12 of the 30 documents open.
 - **Totals:** 71 tests pass (3 explicit probes skipped), and the Release build has 0 warnings.
-- **Not verified yet:** the NativeAOT publish of the worker with these requests. See finding 50.
+- **NativeAOT:** once the SDK was bumped (finding 50), the worker with these requests published with no warnings, and the smoke test passed.
 
 ### Findings
 50. **NuGet's audit stopped the NativeAOT publish: the pinned runtime has a high-severity vulnerability.**
@@ -647,4 +647,8 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
     - **The audit caught it** because a publish restores the ILCompiler package, and NuGet audit warnings are errors.
     - **The CI build does not reach this audit,** because its locked restore has no runtime packages. So the next Package workflow run would fail, and every package built from the current pin ships the vulnerable runtime.
     - This is the monthly SDK bump that finding 14 asks for, made urgent.
+    - **Fixed 2026-11-06:** the pin moved to SDK 10.0.403 (runtime 10.0.14), which also fixes CVE-2026-70197, CVE-2026-102870 and CVE-2026-114148.
+      - Only `Microsoft.NET.ILLink.Tasks` changed in the lock files.
+      - The audit then passed, and so did the NativeAOT publish, all 71 tests, and the smoke test.
+      - Local launch times were slower than in S6 (0.26–0.40 s to the window, warm), on a busy machine waiting for a restart after the install. The Package workflow on clean runners is the comparison.
 
