@@ -127,5 +127,49 @@ public static class QpdfStructure
         return file.Write(_ => { }, encryptedOutput: file.IsEncrypted, inspectable);
     }
 
+    /// <summary>
+    /// The names of the optional-content layers (OCGs) that are off when the document opens, by its
+    /// default configuration: /OCProperties /D, with its /BaseState, /ON and /OFF. A name that a layer
+    /// which is on also uses is left out, so nothing visible is ever counted as hidden. Usage-based
+    /// rules (/AS) are not applied.
+    /// </summary>
+    public static IReadOnlySet<string> HiddenLayerNames(ReadOnlySpan<byte> pdf, string? password = null)
+    {
+        using var edit = QpdfEdit.Open(pdf, password);
+        var hidden = new HashSet<string>(StringComparer.Ordinal);
+        QpdfObject properties = edit.Get(edit.Root, "/OCProperties");
+        if (!edit.IsDictionary(properties) || !edit.IsDictionary(edit.Get(properties, "/D")) || !edit.IsArray(edit.Get(properties, "/OCGs")))
+        {
+            return hidden;
+        }
+
+        QpdfObject defaults = edit.Get(properties, "/D");
+        bool offUnlessListed = edit.IsName(edit.Get(defaults, "/BaseState"), "/OFF");
+        HashSet<int> listed = LayerIds(edit, defaults, offUnlessListed ? "/ON" : "/OFF");
+        var visible = new HashSet<string>(StringComparer.Ordinal);
+        foreach (QpdfObject layer in edit.Items(edit.Get(properties, "/OCGs")))
+        {
+            QpdfObject name = edit.IsDictionary(layer) ? edit.Get(layer, "/Name") : default;
+            if (!edit.IsDictionary(layer) || !edit.IsString(name))
+            {
+                continue;
+            }
+
+            bool off = offUnlessListed != listed.Contains(edit.ObjectId(layer));
+            (off ? hidden : visible).Add(edit.Text(name));
+        }
+
+        hidden.ExceptWith(visible);
+        return hidden;
+    }
+
+    // The object numbers of the layers in one of the configuration's arrays. Layers are indirect
+    // objects (PDF 2.0, 8.11.2), so their object numbers identify them.
+    private static HashSet<int> LayerIds(QpdfEdit edit, QpdfObject configuration, string key)
+    {
+        QpdfObject array = edit.Get(configuration, key);
+        return edit.IsArray(array) ? [.. edit.Items(array).Where(edit.IsIndirect).Select(edit.ObjectId)] : [];
+    }
+
     private static int Flag(bool value) => value ? 1 : 0;
 }

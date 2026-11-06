@@ -40,7 +40,7 @@ The spike ran from 2026-10-21 to 2026-11-01. This section applies the rules in s
 **Carried into Milestone 1 as work:**
 - redaction and qpdf operations in the worker (finding 37): **done 2026-11-06**, see "After the spike"
 - worker limits on Linux and macOS (finding 12)
-- reading order (finding 16), and hiding hidden-layer text from screen readers (finding 32)
+- reading order (finding 16), and hiding hidden-layer text from screen readers (finding 32): the second is **done 2026-11-06** ("After the spike")
 - proofs of concept for macOS and Linux printing
 - Orca and VoiceOver checks, and the S1 measurements on Linux and macOS
 - locked publish restores (finding 42)
@@ -451,7 +451,7 @@ CI at `29ed037` (run 41338226605) passed on Windows x64, Linux x64, and macOS ar
       - fonts whose codes are not their characters (for drawn text, text extraction covers this)
 32. **PDFium extracts text from hidden layers.** CANARY-13, in a layer that is off by default, comes back from `GetPageText`.
     - That makes the verifier and `GetTextInArea` more cautious, which is right.
-    - But S2's reading elements would read hidden text aloud to screen-reader users when sighted users don't see it. Filter text by layer visibility before Milestone 1.
+    - But S2's reading elements would read hidden text aloud to screen-reader users when sighted users don't see it. Filter text by layer visibility before Milestone 1. **Done 2026-11-06,** with limits ("After the spike").
 33. **PDFium's page copy drops references to pages it is not copying.** A link on a kept page to a redacted page arrives with no `/Dest`. This was checked directly, because a deep copy would have brought the whole original page back.
     - The redactor drops such links itself too, so it does not depend on PDFium's behaviour.
     - The stray-pages check catches the failure if either safeguard is lost.
@@ -657,6 +657,27 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
   - Windows and Linux must refuse a 512 MB allocation under a 256 MB cap, then serve a 32 MB one.
   - macOS must stop a worker that holds 768 MB.
   - It passes on all three OSes (CI at `2357e4e`, run 42163460286). On Linux and macOS, 70 tests passed and 4 were skipped (the 3 explicit probes, and the Windows-only print test), so it ran there.
+
+### Hidden-layer text and screen readers (finding 32)
+- **The engine gap:** PDFium has no API for layer visibility. It does expose content marks: text inside `/OC /Layer BDC … EMC` carries an `OC` mark whose parameters are the layer's dictionary, so the layer's `/Name` is readable.
+- **qpdf supplies the states:** `QpdfStructure.HiddenLayerNames` reads the default configuration (`/OCProperties /D`, with its `/BaseState`, `/ON` and `/OFF`) and returns the names of the layers that are off.
+- **The reading lines use it:** `PdfiumDocument.GetTextLines`, which feeds the screen-reader elements, now builds each line from its visible characters only.
+  - The worker asks qpdf for the hidden layer names only when a line first meets an `OC` mark. Documents without layers never touch qpdf here.
+  - If qpdf cannot read a file that PDFium could, every layer counts as visible.
+- **Unchanged on purpose:** `GetPageText` and `GetTextInArea` still include hidden text, because redaction must find and remove it.
+- **Limits, all of which fail towards reading the text rather than hiding it:**
+  - membership dictionaries (OCMDs), which have no `/Name`
+  - form XObjects and images hidden by their own `/OC` entry
+  - usage rules (`/AS`)
+  - a name shared by a layer that is on and one that is off, which counts as visible
+
+**Evidence (Windows):**
+- **4 new tests:**
+  - Through the worker, CANARY-13 is missing from the reading lines, while `GetPageText` still has it.
+  - Negative control: the same file with the layer switched on is read in full, so the filtering is what removes it.
+  - `HiddenLayerNames` handles both `/BaseState` modes.
+  - A name shared with a visible layer is not hidden.
+- **Totals:** 78 tests pass, and the fuzz test's results are unchanged.
 
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:

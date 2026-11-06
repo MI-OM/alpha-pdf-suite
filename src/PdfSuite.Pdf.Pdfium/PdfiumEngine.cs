@@ -25,7 +25,7 @@ public sealed unsafe class PdfiumEngine : IPdfEngine
                 throw new PdfOpenException(error);
             }
 
-            return new PdfiumDocument(document, buffer);
+            return new PdfiumDocument(document, buffer, data.Length);
         }
     }
 }

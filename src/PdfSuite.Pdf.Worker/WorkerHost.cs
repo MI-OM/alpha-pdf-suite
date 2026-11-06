@@ -202,8 +202,27 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
             throw new PdfOpenException(PdfOpenError.Format);
         }
 
+        if (document is PdfiumDocument pdfium)
+        {
+            // Asked only when a text line meets a layer, which most documents never do (finding 32).
+            pdfium.FindHiddenLayers = pdf => HiddenLayers(pdf, password);
+        }
+
         _documents[_nextDocumentId++] = document;
         MessageIO.Write(output, MessageKind.Opened, request.RequestId, payload);
+    }
+
+    // A file qpdf cannot read may still open in PDFium; its layers then all count as visible.
+    private static IReadOnlySet<string> HiddenLayers(ReadOnlySpan<byte> pdf, string? password)
+    {
+        try
+        {
+            return QpdfStructure.HiddenLayerNames(pdf, password);
+        }
+        catch (QpdfException)
+        {
+            return new HashSet<string>();
+        }
     }
 
     private void RenderTile(in Message request)

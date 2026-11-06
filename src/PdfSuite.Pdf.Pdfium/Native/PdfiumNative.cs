@@ -227,6 +227,20 @@ internal static unsafe partial class PdfiumNative
     [LibraryImport(Library)]
     internal static partial nint FPDFText_GetTextObject(nint textPage, int index);
 
+    // Content marks: "/Tag <properties> BDC ... EMC" in a content stream. Names and string values
+    // come back as UTF-16LE with a terminating NUL; the length out-parameters are in bytes.
+    [LibraryImport(Library)]
+    internal static partial int FPDFPageObj_CountMarks(nint pageObject);
+
+    [LibraryImport(Library)]
+    internal static partial nint FPDFPageObj_GetMark(nint pageObject, CULong index);
+
+    [LibraryImport(Library)]
+    internal static partial int FPDFPageObjMark_GetName(nint mark, char* buffer, CULong bufferLength, CULong* outLength);
+
+    [LibraryImport(Library, StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial int FPDFPageObjMark_GetParamStringValue(nint mark, string key, char* buffer, CULong bufferLength, CULong* outLength);
+
     [LibraryImport(Library)]
     internal static partial int FPDFText_GetCharOrigin(nint textPage, int index, double* x, double* y);
 
