@@ -777,14 +777,41 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
   - **So the floor comes from where the app is linked, not from what it needs.** Linked against an older glibc, the app would need only what the bundled libraries need: glibc 2.34, which Ubuntu 22.04 and Debian 12 have.
   - It also means a newer runner image can raise the floor again. The annotation and the install jobs would now show it.
   - The results otherwise matched `6d625fb`: Ubuntu 24.04 and 26.04 and Debian 13 passed, and Ubuntu 22.04 and Debian 12 refused the package.
+  - PowerShell 7 on the runner found the same libstdc++ and libgcc floors as Windows PowerShell 5.1 here, so the reader works the same in both.
+  - **The AppImage's first launch** took 4.5 s to the window. That is over the PRD's 3 s target in three of its six runs (finding 48).
 - **Decided 2026-11-06: keep Ubuntu 22.04 and Debian 12, by linking against an older glibc.**
   - The Package workflow's Linux NativeAOT build now runs in an Ubuntu 22.04 container (glibc 2.35), pinned by digest.
     - The runner's SDK and PowerShell are mounted at their own paths, and the build runs as the runner's user.
     - The job's other steps stay on the runner: the ReadyToRun comparison build, the smoke tests and the packaging.
   - **Why not GitHub's `ubuntu-22.04` runner instead:** GitHub keeps two generally available Ubuntu images. 24.04 and 26.04 both are, so 22.04 is likely to be retired next. A Docker Hub image stays available.
-  - **Expected:** the floor drops to the bundled libraries' glibc 2.34, and Ubuntu 22.04 and Debian 12 install and launch the app. This is in a local commit, not run yet.
-  - PowerShell 7 on the runner found the same libstdc++ and libgcc floors as Windows PowerShell 5.1 here, so the reader works the same in both.
-  - **The AppImage's first launch** took 4.5 s to the window. That is over the PRD's 3 s target in three of its six runs (finding 48).
+- **CI at `3ed4dc6`** (Package run 42255035086, second attempt; CI run 42255035328 passed): **the floor is glibc 2.34, and the .deb installs and launches on all five releases.**
+  - The build container reported glibc `2.35-0ubuntu3.15`.
+  - **The floor is glibc 2.34,** set by the bundled GnuTLS stack and now by both executables too. Every program linked against glibc 2.34 or later needs that version, for `__libc_start_main`. `fmod` no longer appears. The libstdc++ floor is unchanged: `GLIBCXX_3.4.29`, from qpdf.
+  - **The .deb installed and launched in a bare container of every release it accepts,** with 55 MB on disk each time (window / first page sharp):
+
+| Release | glibc | ICU | First launch | Warm (runs 2–3) |
+|---|---|---|---|---|
+| Ubuntu 22.04 | 2.35 | 70 | 67 / 142 ms | 62–64 / 138–140 ms |
+| Debian 12 | 2.36 | 72 | 66 / 139 ms | 60–65 / 137–138 ms |
+| Ubuntu 24.04 | 2.39 | 74 | 131 / 236 ms | 85–98 / 189 ms |
+| Debian 13 | 2.41 | 76 | 109 / 200 ms | 79–93 / 168–178 ms |
+| Ubuntu 26.04 | 2.43 | 78 | 97 / 186 ms | 69–76 / 142–149 ms |
+
+  - **The network check** passed again on Ubuntu 24.04.
+  - **The AppImage** launched on the Ubuntu 26.04 runner, reaching the window in 0.73 s on its first launch. That makes three of its seven runs over 3 s (finding 48). It now needs the same glibc as the .deb, but it is launched only on the runner, so older systems are not checked for it.
+  - **Start times did not change noticeably.** The NativeAOT folder on the runner reached the first page in 151–157 ms, against 138–144 ms at `70680f1`, when it was linked on the runner.
+  - **The cost is build time:**
+    - The container step took 98 s: about 35 s to build the image (clang and its dependencies from Ubuntu's archive) and 63 s to publish.
+    - The NativeAOT publish on the runner took 46–69 s in the three runs before.
+    - Caching the image would win most of that back. Not done.
+  - **Two small faults, fixed in a local commit and not run yet:**
+    - The publish script's size notice did not become an annotation, because `GITHUB_ACTIONS` was not passed into the container. The log has it: 54.9 MB in 15 files.
+    - Reading the container's glibc version printed a harmless "broken pipe" message, because `head` closed the pipe while `docker run` was still writing.
+  - **A macOS runner shortage blocked the Linux checks.**
+    - In the first attempt, no macOS arm64 runner took the macOS package job, and GitHub cancelled it after 15 minutes.
+    - Every install job needs the whole package matrix, so all of them were skipped, the Linux ones included.
+    - Re-running the failed jobs passed.
+    - Splitting the package job by OS would let each OS's install jobs run on their own. Not done.
 
 ### Findings
 50. **NuGet's audit stopped the NativeAOT publish: the pinned runtime has a high-severity vulnerability.**
@@ -817,6 +844,7 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
     | `70680f1` | 1,008 / 3,527 | 257–286 / 779–781 | 276–336 / 1,855–2,017 | 479–727 / 1,136–1,381 |
     | `6d625fb` (same app code) | 859 / 2,782 | 249–296 / 640–737 | 279–384 / 995–1,258 | 482–1,092 / 1,082–1,809 |
     | `b186887` (same app code) | 1,048 / 3,271 | 206–263 / 574–691 | 135–144 / 345–376 | 334–359 / 671–753 |
+    | `3ed4dc6` (same app code) | 1,026 / 3,538 | 402–491 / 1,107–1,743 | 167–182 / 467–471 | 296–332 / 627–749 |
 
     - **On the other OSes, nothing moved.** At `70680f1`, the NativeAOT folder's warm launches reached the first page in 191–211 ms on Windows and 138–144 ms on Linux, against 196–199 ms and 184–185 ms in S6.
     - **Evidence against a cause in this push:**
@@ -826,7 +854,8 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
       - `6d625fb` changed only Linux packaging, so it rebuilt the same app. Its warm folder launches took 1.0–1.3 s, against 1.9–2.0 s at `70680f1`, and the DMG's first launch took 2.8 s, against 3.5 s. Runner variation alone is that large.
     - **Mostly settled at `b186887`,** a third build of the same app code. Its warm folder launches reached the first page in 0.35–0.38 s, as fast as in S6.
       - So identical code took 0.35, 1.0–1.3 and 1.9–2.0 s warm on these runners: the folder slowdown was the runners, not the code.
-    - **Still unexplained:** the DMG's first launch reached the first page in 2.8–3.5 s in the last five runs, against 1.05–2.4 s in S6. Its window stayed at 0.6–1.05 s, within the PRD's 3 s target.
+      - `3ed4dc6`, a fourth build of the same app code, turned it around: the folder was close to S6 again, while the installed DMG's warm launches were the slowest yet, at 1.1–1.7 s.
+    - **Still unexplained:** the DMG's first launch reached the first page in 2.8–3.5 s in the last six runs, against 1.05–2.4 s in S6. Its window stayed at 0.6–1.05 s, within the PRD's 3 s target.
       - Re-running the Package workflow at `97cefbe` and at the latest commit, alternately, would separate runner load from a cost that came in with `97cefbe`.
       - `81ab077` can no longer be rebuilt for this: its pinned runtime now fails NuGet's audit (finding 50).
       - A Mac to measure on would settle it.
@@ -837,11 +866,12 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
     - If the files need a newer glibc than a system has, apt installs the package and it then fails to start.
     - **Confirmed** at `6d625fb`: the app needs glibc 2.38, above Ubuntu 22.04's 2.35 and Debian 12's 2.36. The floor is now declared, so apt refuses the package there instead of installing one that cannot start (see "Linux releases for the .deb").
     - **The cause** (`b186887`): one function, `fmod`, which the runner's glibc 2.43 binds to its 2.38 version at link time.
-    - **Decided 2026-11-06: link against an older glibc**, so both releases stay supported (see "Linux releases for the .deb"). The options were:
+    - **Decided 2026-11-06: link against an older glibc**, so both releases stay supported. The options were:
       - **Stop accepting them:** remove `libicu70` and `libicu72` and their install jobs. No cost now, and the .deb supports Ubuntu 24.04 and Debian 13 onwards.
       - **Link against an older glibc:** publish the Linux build in a pinned older image, or with a sysroot, as .NET's own builds do. The floor drops to the bundled libraries' 2.34. It stops depending on the runner image, and the AppImage, whose point is to run on many systems, reaches older ones too. It changes the Linux packaging job, and is an ADR-0005 decision.
       - **Pin `fmod` to its old version** with a linker wrapper: a few lines of C. A stopgap, which the floor annotation would show failing as soon as another function moves.
     - Which distributions to support is a product decision. The PRD asks for the major ones, with a support matrix.
+    - **Fixed and verified at `3ed4dc6`:** linked in an Ubuntu 22.04 container, the app needs glibc 2.34, and the .deb installs and launches on Ubuntu 22.04 and Debian 12 (see "Linux releases for the .deb").
 54. **The .deb could not be installed on Ubuntu 26.04, the current LTS.**
     - Ubuntu 26.04 ships only ICU 78 (`libicu78`), and the package accepted ICU 70, 72, 74 or 76, so apt would have refused it.
     - From the package lists on packages.ubuntu.com and packages.debian.org (2026-11-06). Debian 13 has `libicu76`, so it was not affected.

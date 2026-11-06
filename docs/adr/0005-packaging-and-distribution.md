@@ -54,6 +54,7 @@ All from spike item S6 (spike results: S6 evidence and findings 38–49):
 - **The AppImage runtime links libfuse (LGPL-2.1) statically** (finding 45).
 - **The .deb's dependency list must come from `ldd`** plus the libraries loaded at run time (finding 47).
   - Its glibc floor is measured from the files, and it is installed on every release it accepts. Before that, it could not be installed on Ubuntu 26.04 at all (findings 53 and 54).
+  - Linked on the runner, the app needed glibc 2.38, for `fmod` alone. Linked in an Ubuntu 22.04 container, it needs 2.34, the same as the bundled libraries. The .deb then installed and launched on Ubuntu 22.04, 24.04 and 26.04 and Debian 12 and 13 (Package run 42255035086).
 - **`PublishAot` in a project file makes the lock files OS-specific** (finding 41).
 
 ## 4. Decision and rationale
@@ -83,7 +84,7 @@ All from spike item S6 (spike results: S6 evidence and findings 38–49):
 - **Lock files:** 15 more of them to keep in step with the SDK pin.
 - **macOS needs a paid membership.** Without it, Gatekeeper blocks downloaded copies.
 - **The AppImage** brings LGPL obligations and slower first launches. The .deb has neither.
-- **The Linux build container** must stay on the oldest supported release. Dropping a release means moving the container and the oldest install jobs on together; the floor then rises on purpose.
+- **The Linux build container** must stay on the oldest supported release. Dropping a release means moving the container and the oldest install jobs on together; the floor then rises on purpose. Building its image adds about 35 s to the Linux job.
 
 ## 6. Licensing and security consequences
 - **Licences that ship:**
