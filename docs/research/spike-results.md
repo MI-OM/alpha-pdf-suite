@@ -811,7 +811,11 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
     - In the first attempt, no macOS arm64 runner took the macOS package job, and GitHub cancelled it after 15 minutes.
     - Every install job needs the whole package matrix, so all of them were skipped, the Linux ones included.
     - Re-running the failed jobs passed.
-    - **Split after `dcf2954`:** each OS's package is now its own job, calling a reusable workflow (`package-build.yml`) with its runner and runtime identifier. Each install job waits only for its own OS's package. The steps are unchanged. Not run yet.
+    - **Split at `1744531`:** each OS's package is now its own job, calling a reusable workflow (`package-build.yml`) with its runner and runtime identifier. Each install job waits only for its own OS's package. The steps are unchanged.
+    - **First run at `2a4214d`** (Package run 42285696842; CI run 42285696741 passed): every job passed.
+      - Each install job started within 2–3 s of its own OS's package finishing. The MSIX job no longer waited for the Linux package, and the DMG job waited 2 minutes for a macOS runner without holding anything else up.
+      - The rest matched `3d36614`: glibc 2.34, the .deb on all five releases, and the network check.
+      - The AppImage's first launch took 1.6 s to the window, so three of its nine runs were over 3 s (finding 48).
 - **CI at `3d36614`** (Package run 42263377962 and CI run 42263377931, both passed at the first attempt):
   - **Both fixes work.** The AOT size is an annotation (54.9 MB in 15 files), and the broken-pipe message is gone.
   - **The same floor,** glibc 2.34. The .deb installed and launched on all five releases again, each reaching the first page in 0.16–0.21 s on its first launch.
@@ -853,6 +857,7 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
     | `b186887` (same app code) | 1,048 / 3,271 | 206–263 / 574–691 | 135–144 / 345–376 | 334–359 / 671–753 |
     | `3ed4dc6` (same app code) | 1,026 / 3,538 | 402–491 / 1,107–1,743 | 167–182 / 467–471 | 296–332 / 627–749 |
     | `3d36614` (same app code) | 1,442 / 3,754 | 271–275 / 656–764 | 234–332 / 671–760 | 394–607 / 912–1,141 |
+    | `2a4214d` (same app code) | 990 / 4,070 | 348–424 / 1,019–1,097 | 434–687 / 1,277–1,440 | 1,778–1,891 / 3,340–4,131 |
 
     - **On the other OSes, nothing moved.** At `70680f1`, the NativeAOT folder's warm launches reached the first page in 191–211 ms on Windows and 138–144 ms on Linux, against 196–199 ms and 184–185 ms in S6.
     - **Evidence against a cause in this push:**
@@ -863,7 +868,7 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
     - **Mostly settled at `b186887`,** a third build of the same app code. Its warm folder launches reached the first page in 0.35–0.38 s, as fast as in S6.
       - So identical code took 0.35, 1.0–1.3 and 1.9–2.0 s warm on these runners: the folder slowdown was the runners, not the code.
       - `3ed4dc6`, a fourth build of the same app code, turned it around: the folder was close to S6 again, while the installed DMG's warm launches were the slowest yet, at 1.1–1.7 s.
-    - **The DMG's first launch** reached the first page in 2.8–3.8 s in the seven runs after S6, against 1.05–2.4 s in S6. Its window took 0.6–1.4 s, within the PRD's 3 s target.
+    - **The DMG's first launch** reached the first page in 2.6–4.1 s in the twelve runs since S6, the A/B re-runs below included, against 1.05–2.4 s in S6. Its window took 0.6–1.4 s, within the PRD's 3 s target.
     - **A/B re-runs (2026-11-06)** of the Package runs at `97cefbe` (run 42162820338) and `3d36614` (run 42263377962), alternately, twice each:
 
     | Order | Commit | DMG, first launch | DMG, warm | NativeAOT folder, first run | NativeAOT folder, warm |
@@ -878,6 +883,7 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
       - **The published folders were slower at `97cefbe`, in both re-runs:** 3.2–3.3 s to the first page on the first run, against 0.8 s. Its ReadyToRun folder was slower too.
         - The installed DMG holds the same files and showed no such gap, on fresh runners. Nor did `97cefbe`'s original run (564–666 ms warm).
         - So it is probably not the app's code. The macOS build steps on those runners were not slower either, so this comparison does not explain it.
+        - **Confirmed at `2a4214d`,** the same app code as `3d36614`: its folder took 2.5 s to the first page on the first run, and its ReadyToRun folder 13.3 s. So slow folder launches happen at the latest code too. They come from the package job's runner, not from `97cefbe`.
     - **Still unexplained: the rise since S6.** Either the runner images drifted, or the cost came in between S6 and `97cefbe`, with the worker operations of `ba0966e` or the SDK bump to 10.0.403.
       - S6's commits cannot be rebuilt as they are: their pinned runtime now fails NuGet's audit (finding 50).
       - S6's app code could be rebuilt with SDK 10.0.403 on a throwaway branch, which would separate the two.
