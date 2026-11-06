@@ -26,9 +26,9 @@
 | Rendering targets (S1) | Measured: every target met | Not measured interactively. The packaged app renders | Not measured interactively. The packaged app renders under Xvfb |
 | Document text for screen readers (S2) | Verified through UI Automation. NVDA and Narrator checks pending | VoiceOver not tested | Orca not tested |
 | Printing (S3) | Prototyped: native dialog, worker renders | Not started (estimated 2–5 days) | Not started (estimated 2–3 days) |
-| Packages (S6) | MSIX installs and launches. Test certificate only | DMG installs and launches. Signed ad hoc, not notarised, and Gatekeeper rejects it | .deb and AppImage install and launch |
+| Packages (S6) | MSIX installs and launches. Test certificate only | DMG installs and launches. Signed ad hoc, not notarised, and Gatekeeper rejects it | .deb and AppImage install and launch, on Ubuntu 24.04 and 26.04 only. Older distributions the .deb accepts are not checked (finding 53) |
 | Worker resource limits | Memory cap: the Job Object refuses allocations over it | Memory cap: the worker is stopped when its footprint goes over (checked every 250 ms) | Memory cap: `RLIMIT_DATA`, which the worker sets on itself, refuses allocations over it |
-| No network use while reading | Not checked | Not checked | Checked in CI under `strace` (added 2026-11-06, not yet run) |
+| No network use while reading | Not checked | Not checked | Checked in CI under `strace`: no IP socket while opening and rendering. First run 2026-11-06 |
 | Worker OS sandbox | None | None | None |
 | Architectures built | x64 (arm64 not built) | arm64 (x64 not built) | x64 (arm64 not built) |
 | **Supported** | **No** | **No** | **No** |

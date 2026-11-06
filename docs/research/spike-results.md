@@ -547,7 +547,7 @@ The Package workflow at `81ab077` (run 41356497705) passed on all three OSes. Th
 | MSIX, Windows Server 2025 runner | 22.4 MB | 53.7 MB | Test certificate trusted, then `Add-AppxPackage`. Started through its `pdf-suite` alias, then uninstalled cleanly | 231 / 395 ms; 399 / 736 ms | 114–151 / 248–309 ms |
 | DMG, macOS arm64 runner | 24.1 MB | 51 MB | Mounted, and the app copied to /Applications | 285 / 1,054 ms; 617 / 2,418 ms | 109–179 / 286–482 ms |
 | .deb, bare `ubuntu:24.04` container | 18.4 MB | 55 MB | `apt install`, which pulled in 18 packages, ICU and DejaVu fonts among them. Removed cleanly | 71 / 146 ms; 105 / 194 ms | 54–91 / 128–179 ms |
-| AppImage, Ubuntu 24.04 runner | 21.6 MB | Runs in place | None: it mounted itself with FUSE | 3,561 / 3,818 ms; 1,698 / 1,969 ms | 176–187 / 283–290 ms |
+| AppImage, Ubuntu 26.04 runner (`ubuntu-latest`) | 21.6 MB | Runs in place | None: it mounted itself with FUSE | 3,561 / 3,818 ms; 1,698 / 1,969 ms | 176–187 / 283–290 ms |
 
 - **macOS signing:** the installed bundle verifies (`valid on disk`, `satisfies its Designated Requirement`), with the flags `adhoc,runtime` and no team identifier. Gatekeeper's assessment: `rejected`.
 - **Published folders, in the packaging jobs** (first run at `81ab077`). These are not fresh machines: the files had just been written. Window / first page sharp:
@@ -697,7 +697,10 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
 - **The check:** the Package workflow runs the installed .deb's smoke test under `strace` in the bare Ubuntu container. It fails if the app or its worker opens an IPv4 or IPv6 socket while opening, rendering and loading qpdf. Local sockets, for X11 and D-Bus, are allowed.
 - **Negative control:** bash connecting to a closed local port, under the same trace, must be caught, or the step fails as proving nothing.
 - **Only Linux:** Windows and macOS would need their own tracing (ETW, `dtrace` or the network extension APIs). They are not covered yet.
-- **Not yet run:** this step has not run in CI. It is in a local commit.
+- **First run (CI at `70680f1`, Package run 42204462613): passed.**
+  - It traced 19 socket and connect calls while the app opened the fixture, rendered it and loaded qpdf. None was for an IP socket.
+  - The control was caught.
+  - The launch under the trace reached the window in 274 ms and the first page in 424 ms.
 
 ### Text search in the engine and the worker (Milestone 1)
 - **The engine:** `IPdfDocument.FindText(page, query, matchCase, wholeWord)` returns each match's text and its rectangles, from PDFium's `FPDFText_Find*`.
@@ -725,6 +728,27 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
 - **No worker crashed.**
 - **The fuzz tests take 2–4 s.**
 
+### CI at `70680f1` (2026-11-06)
+The CI workflow (run 42204462513) and the Package workflow (run 42204462613) passed on all three OSes, with the fuzz tests, hidden-layer filtering, tagged reading order, search and the network check.
+- **Tests:** on Windows 84 passed, and the 3 explicit probes were skipped. On Linux and macOS 83 passed and 4 were skipped, adding the Windows-only print test. So every test added since `2357e4e` passed on all three OSes.
+- **Runners:** `windows-2025-vs2026`, `macos-26-arm64` and `ubuntu-26.04`. `ubuntu-latest` has been Ubuntu 26.04 since S6, which the S6 table had wrong.
+- **Fixtures:** all 10 were byte-identical across the OSes.
+- **The fuzz test's counts are not visible in CI:**
+  - It writes how many mutated files opened, were refused or crashed the worker to test output, which CI does not show for passing tests.
+  - On Linux and macOS it is known that every open ended in a document or a clean refusal. It is not known whether a worker crashed there.
+- **No network use:** passed its first run (see above).
+- **Every package installed on a fresh runner and launched again** (window / first page sharp):
+
+| Package | First launch | Warm (runs 2–3) |
+|---|---|---|
+| MSIX, Windows | 265 / 462 ms | 154–162 / 319–403 ms |
+| DMG, macOS | 1,008 / 3,527 ms | 257–286 / 779–781 ms |
+| .deb, bare `ubuntu:24.04` container | 117 / 188 ms | 75–86 / 163–174 ms |
+| AppImage, Ubuntu 26.04 | 632 / 847 ms | 123–128 / 207–218 ms |
+
+- **The AppImage's first launch** reached the window in 0.6 s, against 1.5–4.9 s in the four runs before (finding 48). Its first launches vary more than any other package's.
+- **The DMG's first launch took 3.5 s to the first page, its slowest yet** (finding 52). The PRD's 3 s target is for the window, which took 1.0 s.
+
 ### Findings
 50. **NuGet's audit stopped the NativeAOT publish: the pinned runtime has a high-severity vulnerability.**
     - CVE-2026-111497 is an out-of-bounds write in .NET's Brotli decoder, published as an advisory on 2026-11-03. It affects .NET 10 before 10.0.14, which shipped with SDK 10.0.403 on 2026-10-25.
@@ -744,4 +768,34 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
       - The app also treats any worker error at open as a file it could not use.
     - **The test guards it:** with the worker fix removed, the fuzz test fails on this case.
     - **Open design question:** other viewers show the pages they can read. Refusing the whole document is the safe choice for now. Showing readable pages is a UX decision for the reader milestones.
+52. **Start times on macOS have risen over the last five Package runs. Windows and Linux have not.**
+    - Window / first page sharp, in ms, on `macos-26-arm64` runners:
+
+    | Commit | DMG, first launch | DMG, warm | NativeAOT folder, warm | ReadyToRun folder, warm |
+    |---|---|---|---|---|
+    | `81ab077` (S6) | 285 / 1,054 | 109–117 / 286–339 | 151–155 / 409–417 | 318–341 / 724–833 |
+    | `63e874f` (S6) | 617 / 2,418 | 158–179 / 475–482 | 151–152 / 400–473 | 317–350 / 693–761 |
+    | `97cefbe` | 631 / 2,759 | 179–283 / 442–662 | 230–278 / 564–666 | 532–566 / 1,069–1,183 |
+    | `2357e4e` | 739 / 2,909 | 283–383 / 735–814 | 166–171 / 470–485 | 473–731 / 984–1,361 |
+    | `70680f1` | 1,008 / 3,527 | 257–286 / 779–781 | 276–336 / 1,855–2,017 | 479–727 / 1,136–1,381 |
+
+    - **On the other OSes, nothing moved.** At `70680f1`, the NativeAOT folder's warm launches reached the first page in 191–211 ms on Windows and 138–144 ms on Linux, against 196–199 ms and 184–185 ms in S6.
+    - **Evidence against a cause in this push:**
+      - The only macOS-specific code since S6 is the app's watch on the worker's memory (`2357e4e`), which reads one counter every 250 ms.
+      - The NativeAOT folder was four times slower than at `2357e4e`. Yet the DMG holding the same files, launched on another fresh runner, was no slower than at `2357e4e` (779–781 ms against 735–814 ms, warm).
+      - The runner image versions do not line up with the times. The slowest folder launches ran on image 20261021.618, the same image as S6's fastest.
+    - **Not settled:** it could be load on the shared macOS runners, or a cost that came in with `97cefbe` and grew since.
+      - Re-running the Package workflow at `97cefbe` and at `70680f1`, alternately, would separate the two.
+      - `81ab077` can no longer be rebuilt for this: its pinned runtime now fails NuGet's audit (finding 50).
+      - A Mac to measure on would settle it.
+53. **The .deb accepts older distributions than CI checks, and may not start on them.**
+    - Its dependencies accept ICU from Ubuntu 22.04 (`libicu70`) and Debian 12 (`libicu72`), and any version of `libc6`.
+    - The NativeAOT executables are linked on the runner, which is Ubuntu 26.04. They can need a newer glibc than the systems the package accepts.
+    - They do run on Ubuntu 24.04 (glibc 2.39), where the install job runs. Nothing has been measured below that.
+    - If the files need a newer glibc than a system has, apt installs the package and it then fails to start.
+    - **The fix:**
+      - Record in the Package workflow the newest glibc symbol version the files need (`objdump -T`).
+      - Declare it as `libc6 (>= …)`.
+      - Add install jobs for the oldest distributions the package accepts.
+    - Which distributions to support is a product decision. The PRD asks for the major ones, with a support matrix.
 
