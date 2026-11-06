@@ -803,7 +803,7 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
   - **The cost is build time:**
     - The container step took 98 s: about 35 s to build the image (clang and its dependencies from Ubuntu's archive) and 63 s to publish.
     - The NativeAOT publish on the runner took 46–69 s in the three runs before.
-    - Caching the image would win most of that back. Not done.
+    - **Caching the image was considered and not done** (2026-11-06). A cached image would still be downloaded and loaded: the clang and LLVM toolchain, several hundred MB by estimate, which takes a good part of the 30–35 s it saves. It would also keep an unpinned toolchain until the cache key changed, and add a cached image that release builds trust.
   - **Two small faults,** fixed at `3d36614`:
     - The publish script's size notice did not become an annotation, because `GITHUB_ACTIONS` was not passed into the container. The log has it: 54.9 MB in 15 files.
     - Reading the container's glibc version printed a harmless "broken pipe" message, because `head` closed the pipe while `docker run` was still writing.
@@ -811,7 +811,7 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
     - In the first attempt, no macOS arm64 runner took the macOS package job, and GitHub cancelled it after 15 minutes.
     - Every install job needs the whole package matrix, so all of them were skipped, the Linux ones included.
     - Re-running the failed jobs passed.
-    - Splitting the package job by OS would let each OS's install jobs run on their own. Not done.
+    - **Split after `dcf2954`:** each OS's package is now its own job, calling a reusable workflow (`package-build.yml`) with its runner and runtime identifier. Each install job waits only for its own OS's package. The steps are unchanged. Not run yet.
 - **CI at `3d36614`** (Package run 42263377962 and CI run 42263377931, both passed at the first attempt):
   - **Both fixes work.** The AOT size is an annotation (54.9 MB in 15 files), and the broken-pipe message is gone.
   - **The same floor,** glibc 2.34. The .deb installed and launched on all five releases again, each reaching the first page in 0.16–0.21 s on its first launch.
