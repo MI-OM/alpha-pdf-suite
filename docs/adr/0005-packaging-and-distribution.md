@@ -53,6 +53,7 @@ All from spike item S6 (spike results: S6 evidence and findings 38–49):
 - **Gatekeeper rejects the ad hoc signed app.** The app itself needs no entitlements under the hardened runtime (finding 46).
 - **The AppImage runtime links libfuse (LGPL-2.1) statically** (finding 45).
 - **The .deb's dependency list must come from `ldd`** plus the libraries loaded at run time (finding 47).
+  - Its glibc floor is measured from the files, and it is installed on every release it accepts. Before that, it could not be installed on Ubuntu 26.04 at all (findings 53 and 54).
 - **`PublishAot` in a project file makes the lock files OS-specific** (finding 41).
 
 ## 4. Decision and rationale

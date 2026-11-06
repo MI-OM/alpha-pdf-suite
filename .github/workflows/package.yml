@@ -199,13 +199,22 @@ jobs:
       - name: Launch the installed app
         run: sh tools/package/smoke-test.sh "DMG installed" packages/large-2000-pages.pdf 3 "/Applications/PDF Suite.app/Contents/MacOS/PdfSuite.App"
 
-  # A bare Ubuntu image: apt must install everything the package declares. xvfb, needed to give the
-  # app a display, brings X libraries of its own, so this cannot prove that no X library is missing.
+  # A bare image of every release whose ICU the package accepts (package-linux.ps1): apt must
+  # install everything the package declares, and the app must start on that release's glibc and
+  # libstdc++ (spike results, finding 53). xvfb, needed to give the app a display, brings X
+  # libraries of its own, so this cannot prove that no X library is missing.
   install-deb:
-    name: Install and launch (.deb, clean Ubuntu 24.04 container)
+    name: Install and launch (.deb, clean ${{ matrix.image }} container)
     needs: package
     runs-on: ubuntu-latest
-    container: ubuntu:24.04
+    container: ${{ matrix.image }}
+    env:
+      # Older images pull in tzdata with xvfb, and its question would wait for an answer.
+      DEBIAN_FRONTEND: noninteractive
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['ubuntu:24.04', 'ubuntu:22.04', 'ubuntu:26.04', 'debian:12', 'debian:13']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -219,18 +228,27 @@ jobs:
       - name: Install with apt
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends ./packages/pdf-suite-linux-x64.deb
+          log="$RUNNER_TEMP/apt.txt"
+          if ! apt-get install -y --no-install-recommends ./packages/pdf-suite-linux-x64.deb > "$log" 2>&1; then
+            cat "$log"
+            echo "::error title=.deb on ${{ matrix.image }}::apt refused the package: $( (grep -m1 'Depends:' "$log" || tail -n 1 "$log") | sed 's/^ *//')"
+            exit 1
+          fi
+          cat "$log"
           dpkg -s pdf-suite-spike | grep -E '^(Version|Installed-Size|Depends):'
-          echo "::notice title=.deb installed::$(du -sh /opt/pdf-suite | cut -f1) on disk"
+          versions() { dpkg-query -W -f='${Package} ${Version} ${db:Status-Status}\n' "$@" | awk '$3 == "installed" { printf "%s %s; ", $1, $2 }'; }
+          echo "::notice title=.deb on ${{ matrix.image }}::installed, $(du -sh /opt/pdf-suite | cut -f1) on disk. $(versions libc6 libstdc++6 'libicu[0-9]*')"
           apt-get install -y --no-install-recommends xvfb xauth
 
       - name: Launch the installed app
-        run: sh tools/package/smoke-test.sh ".deb installed" packages/large-2000-pages.pdf 3 pdf-suite
+        run: sh tools/package/smoke-test.sh ".deb on ${{ matrix.image }}" packages/large-2000-pages.pdf 3 pdf-suite
 
       # PRD §9: reading makes no network request. The app runs under strace and must open no IPv4
       # or IPv6 socket; local sockets (X11, D-Bus) are fine. The control shows the trace would
-      # catch one: bash connecting to a closed local port opens an IPv4 socket.
+      # catch one: bash connecting to a closed local port opens an IPv4 socket. One release is
+      # enough: what is checked is the app, not the system.
       - name: No network use while reading
+        if: matrix.image == 'ubuntu:24.04'
         run: |
           apt-get install -y --no-install-recommends strace
           trace="$RUNNER_TEMP/network.txt"

@@ -10,7 +10,8 @@
   (docs/licensing/dependency-inventory.md).
 
   .deb: installs to /opt/pdf-suite with a pdf-suite command and a desktop entry. The package
-  declares the libraries the app loads at run time, so apt installs them on a minimal system.
+  declares the libraries the app loads at run time, so apt installs them on a minimal system, and
+  the glibc version its files need, so apt refuses it on a system too old to run it.
   PowerShell 7 on Linux, with dpkg-deb.
 
 .EXAMPLE
@@ -112,8 +113,21 @@ Copy-Item -Recurse (Join-Path $Layout '*') $opt
 Write-PlaceholderIcon 256 (Join-Path $root "usr/share/icons/hicolor/256x256/apps/$command.png")
 Set-Modes $root
 
+# The newest glibc the files need becomes the libc6 version the package depends on, so apt refuses
+# the package on an older system instead of installing one that cannot start (finding 53). The
+# NativeAOT executables are linked on the build machine, so a newer build image can raise it. The
+# libstdc++ and libgcc versions are recorded, not declared: the install jobs check them.
+$floors = @(Get-RuntimeLibraryFloor $Layout)
+foreach ($floor in $floors) {
+    Write-Notice 'Library floor' ("{0}_{1}, needed by {2}" -f $floor.Family, $floor.Version, ($floor.Files -join ', '))
+}
+$glibc = $floors | Where-Object Family -eq 'GLIBC'
+if (-not $glibc) { throw "No file in $Layout needs a glibc version, so the libc6 dependency cannot be set." }
+
 # Libraries loaded at run time, which dpkg-shlibdeps cannot see: X11, ICE, SM and fontconfig
-# (Avalonia), and ICU (.NET globalisation; the versions in current Debian and Ubuntu releases).
+# (Avalonia), and ICU (.NET globalisation). The ICU packages are those of the releases the Package
+# workflow installs on: Ubuntu 22.04 (70), 24.04 (74) and 26.04 (78), and Debian 12 (72) and 13 (76).
+# Add a release there before adding its ICU here.
 # Linked libraries, from ldd in the Package workflow: glibc (the executables need nothing else),
 # fontconfig and FreeType (Skia), libstdc++, libgcc and zlib (qpdf), and GMP (qpdf's GnuTLS and Nettle).
 $installedKb = [math]::Ceiling((Get-FolderSize $root).Bytes / 1KB)
@@ -123,7 +137,7 @@ Version: $Version
 Architecture: amd64
 Maintainer: PDF Suite spike <maintainers@pdfsuite.invalid>
 Installed-Size: $installedKb
-Depends: libc6, libgcc-s1, libstdc++6, zlib1g, libgmp10, libfreetype6, libicu76 | libicu74 | libicu72 | libicu70, libx11-6, libice6, libsm6, libfontconfig1
+Depends: libc6 (>= $($glibc.Version)), libgcc-s1, libstdc++6, zlib1g, libgmp10, libfreetype6, libicu78 | libicu76 | libicu74 | libicu72 | libicu70, libx11-6, libice6, libsm6, libfontconfig1
 Section: text
 Priority: optional
 Description: PDF Suite technical spike build

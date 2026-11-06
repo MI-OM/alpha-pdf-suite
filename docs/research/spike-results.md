@@ -749,6 +749,23 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
 - **The AppImage's first launch** reached the window in 0.6 s, against 1.5–4.9 s in the four runs before (finding 48). Its first launches vary more than any other package's.
 - **The DMG's first launch took 3.5 s to the first page, its slowest yet** (finding 52). The PRD's 3 s target is for the window, which took 1.0 s.
 
+### Linux releases for the .deb (findings 53 and 54)
+- **The glibc floor is measured from the files:**
+  - `package-linux.ps1` reads every ELF file's version references (`.gnu.version_r`), which the dynamic loader checks before a program starts. It reads them directly, so packaging needs no binutils.
+  - The newest glibc version needed becomes the package's `libc6 (>= …)` dependency. apt then refuses the package on an older system, instead of installing one that cannot start.
+  - The newest libstdc++ and libgcc versions are reported, not declared: their package versions do not map simply onto symbol versions. The install jobs check them instead.
+  - Each floor is a public annotation, with the files that set it.
+- **The .deb is installed and launched on every release whose ICU it accepts:** bare `ubuntu:22.04`, `ubuntu:24.04`, `ubuntu:26.04`, `debian:12` and `debian:13` containers.
+  - If apt refuses the package, the annotation gives apt's reason.
+  - The network check stays on Ubuntu 24.04 only, because what it checks is the app, not the system.
+- **ICU 78 is now accepted** (finding 54).
+- **Evidence (Windows):** the reader was run on PDFium, Skia, HarfBuzz and qpdf's Linux libraries, from the NuGet cache and qpdf's pinned archive. For every file, it found the same newest versions as a plain search of the binary. The prebuilt libraries need:
+  - glibc 2.34, set by the GnuTLS stack bundled with qpdf (`libgnutls`, `libp11-kit` and `libunistring`)
+  - `GLIBCXX_3.4.29` and `CXXABI_1.3.9`, for qpdf
+
+  So the prebuilt libraries fit Ubuntu 22.04 (glibc 2.35) and Debian 12 (glibc 2.36). The NativeAOT executables, linked on the runner, can be measured only in CI.
+- **Not run yet:** this is in a local commit. Windows PowerShell 5.1 ran the reader; the runner's PowerShell 7 has not.
+
 ### Findings
 50. **NuGet's audit stopped the NativeAOT publish: the pinned runtime has a high-severity vulnerability.**
     - CVE-2026-111497 is an out-of-bounds write in .NET's Brotli decoder, published as an advisory on 2026-11-03. It affects .NET 10 before 10.0.14, which shipped with SDK 10.0.403 on 2026-10-25.
@@ -793,9 +810,12 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
     - The NativeAOT executables are linked on the runner, which is Ubuntu 26.04. They can need a newer glibc than the systems the package accepts.
     - They do run on Ubuntu 24.04 (glibc 2.39), where the install job runs. Nothing has been measured below that.
     - If the files need a newer glibc than a system has, apt installs the package and it then fails to start.
-    - **The fix:**
-      - Record in the Package workflow the newest glibc symbol version the files need (`objdump -T`).
-      - Declare it as `libc6 (>= …)`.
-      - Add install jobs for the oldest distributions the package accepts.
+    - **Addressed** (local commit, not yet run in CI): the floor is measured and declared, and the package is installed on every release it accepts (see "Linux releases for the .deb").
     - Which distributions to support is a product decision. The PRD asks for the major ones, with a support matrix.
+54. **The .deb could not be installed on Ubuntu 26.04, the current LTS.**
+    - Ubuntu 26.04 ships only ICU 78 (`libicu78`), and the package accepted ICU 70, 72, 74 or 76, so apt would have refused it.
+    - From the package lists on packages.ubuntu.com and packages.debian.org (2026-11-06). Debian 13 has `libicu76`, so it was not affected.
+    - **Nothing caught it.** The install job ran in an Ubuntu 24.04 container. The AppImage ran on Ubuntu 26.04, but it declares no dependencies.
+    - **The fix:** `libicu78` is now accepted. The NativeAOT app already runs with ICU 78: the packaging job's smoke tests run on the Ubuntu 26.04 runner.
+    - **Keeping it fixed:** a hand-written ICU list goes stale with each release. So the install jobs now cover every release whose ICU the package accepts, and a comment in `package-linux.ps1` ties the two lists together.
 

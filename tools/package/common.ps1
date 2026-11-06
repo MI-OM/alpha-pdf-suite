@@ -41,6 +41,66 @@ function Format-Megabytes {
     '{0:N1} MB' -f ($Bytes / 1MB)
 }
 
+function Get-ElfVersionNeeds {
+    # The symbol versions an ELF file needs from each shared library: its version references
+    # (.gnu.version_r), which the dynamic loader checks before the program starts. Read directly,
+    # so packaging needs no binutils. Returns nothing for a file that is not ELF.
+    param([Parameter(Mandatory)] [string] $Path)
+    $b = [System.IO.File]::ReadAllBytes($Path)
+    if ($b.Length -lt 64 -or $b[0] -ne 0x7F -or $b[1] -ne 0x45 -or $b[2] -ne 0x4C -or $b[3] -ne 0x46) { return }
+    if ($b[4] -ne 2 -or $b[5] -ne 1) { throw "$Path is ELF, but not 64-bit little-endian." }
+
+    function U16([long] $At) { [long][BitConverter]::ToUInt16($b, $At) }
+    function U32([long] $At) { [long][BitConverter]::ToUInt32($b, $At) }
+    function Text([long] $At) { [System.Text.Encoding]::ASCII.GetString($b, $At, [Array]::IndexOf($b, [byte]0, [int]$At) - $At) }
+
+    $sectionTable = [BitConverter]::ToInt64($b, 0x28)
+    $sectionSize = U16 0x3A
+    $sections = U16 0x3C
+    if ($sections -eq 0) { throw "$Path has no section headers, so its version references cannot be read." }
+    for ($i = 0; $i -lt $sections; $i++) {
+        $section = $sectionTable + $i * $sectionSize
+        if ((U32 ($section + 4)) -ne 0x6FFFFFFE) { continue }   # SHT_GNU_verneed
+        $strings = [BitConverter]::ToInt64($b, $sectionTable + (U32 ($section + 40)) * $sectionSize + 24)
+        $need = [BitConverter]::ToInt64($b, $section + 24)
+        for ($n = 0; $n -lt (U32 ($section + 44)); $n++) {      # Elf64_Verneed entries
+            $library = Text ($strings + (U32 ($need + 4)))
+            $aux = $need + (U32 ($need + 8))
+            for ($a = 0; $a -lt (U16 ($need + 2)); $a++) {      # Elf64_Vernaux entries
+                [pscustomobject]@{ Library = $library; Version = Text ($strings + (U32 ($aux + 8))) }
+                $aux += U32 ($aux + 12)
+            }
+            $need += U32 ($need + 12)
+        }
+    }
+}
+
+function Get-RuntimeLibraryFloor {
+    # The newest glibc, libstdc++ and libgcc symbol versions that the ELF files in a folder need,
+    # and which files need them. A system with an older glibc cannot start them (spike results,
+    # finding 53).
+    param([Parameter(Mandatory)] [string] $Folder)
+    $needs = foreach ($file in Get-ChildItem $Folder -File) {
+        foreach ($need in Get-ElfVersionNeeds $file.FullName) {
+            if ($need.Version -eq 'GLIBC_ABI_DT_RELR') {
+                # Packed relative relocations, which glibc supports from 2.36.
+                [pscustomobject]@{ Family = 'GLIBC'; Version = [version]'2.36'; File = $file.Name }
+            }
+            elseif ($need.Version -match '^(GLIBC|GLIBCXX|CXXABI|GCC)_(\d+(\.\d+)+)$') {
+                [pscustomobject]@{ Family = $Matches[1]; Version = [version]$Matches[2]; File = $file.Name }
+            }
+        }
+    }
+    foreach ($family in $needs | Group-Object Family | Sort-Object Name) {
+        $newest = ($family.Group | Sort-Object Version -Descending | Select-Object -First 1).Version
+        [pscustomobject]@{
+            Family  = $family.Name
+            Version = $newest
+            Files   = @($family.Group | Where-Object { $_.Version -eq $newest } | ForEach-Object File | Sort-Object -Unique)
+        }
+    }
+}
+
 if (-not ('SpikeIcon' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
