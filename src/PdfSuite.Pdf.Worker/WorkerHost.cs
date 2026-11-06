@@ -102,6 +102,9 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
                 case MessageKind.GetTextLines:
                     GetTextLines(request);
                     break;
+                case MessageKind.FindText:
+                    FindText(request);
+                    break;
                 case MessageKind.Print:
                     Print(request);
                     break;
@@ -258,6 +261,37 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
         {
             ArrayPool<byte>.Shared.Return(pixels);
         }
+    }
+
+    // One page per request, so tile requests can be served between the pages of a long search.
+    // Payload: [docId][page][int32 flags: 1 match case, 2 whole word][query].
+    // Response: [int32 n] then per match [text][int32 m][m x 4 x double rectangle].
+    private void FindText(in Message request)
+    {
+        var reader = new PayloadReader(request.Payload);
+        IPdfDocument document = _documents[reader.ReadInt32()];
+        int pageIndex = reader.ReadInt32();
+        int flags = reader.ReadInt32();
+        string query = reader.ReadString() ?? string.Empty;
+        IReadOnlyList<TextMatch> matches = document.FindText(pageIndex, query, matchCase: (flags & 1) != 0, wholeWord: (flags & 2) != 0);
+
+        byte[] payload = new byte[4 + matches.Sum(m => PayloadWriter.SizeOf(m.Text) + 4 + (32 * m.Bounds.Count))];
+        var writer = new PayloadWriter(payload);
+        writer.WriteInt32(matches.Count);
+        foreach (TextMatch match in matches)
+        {
+            writer.WriteString(match.Text);
+            writer.WriteInt32(match.Bounds.Count);
+            foreach (PageRect rect in match.Bounds)
+            {
+                writer.WriteDouble(rect.Left);
+                writer.WriteDouble(rect.Top);
+                writer.WriteDouble(rect.Right);
+                writer.WriteDouble(rect.Bottom);
+            }
+        }
+
+        MessageIO.Write(output, MessageKind.TextMatches, request.RequestId, payload);
     }
 
     // Payload: [int32 count] then per line [4 x double bounds][int32 UTF-8 length][UTF-8 text].

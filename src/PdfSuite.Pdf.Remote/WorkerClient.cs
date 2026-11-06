@@ -302,6 +302,49 @@ public sealed class WorkerClient : IDisposable
         return new PayloadReader(response.Payload).ReadString() ?? string.Empty;
     }
 
+    /// <summary>Finds text on one page; see <see cref="IPdfDocument.FindText"/>.</summary>
+    public async Task<IReadOnlyList<TextMatch>> FindTextAsync(
+        int documentId, int pageIndex, string query, bool matchCase = false, bool wholeWord = false, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(query);
+        cancellationToken.ThrowIfCancellationRequested();
+        int id = NextRequestId();
+        Pending pending = Register(id);
+        byte[] payload = new byte[12 + PayloadWriter.SizeOf(query)];
+        var writer = new PayloadWriter(payload);
+        writer.WriteInt32(documentId);
+        writer.WriteInt32(pageIndex);
+        writer.WriteInt32((matchCase ? 1 : 0) | (wholeWord ? 2 : 0));
+        writer.WriteString(query);
+        Send(MessageKind.FindText, id, payload);
+
+        Message response;
+        using (cancellationToken.Register(() => CancelRequest(id)))
+        {
+            response = await pending.Completion.Task.ConfigureAwait(false);
+        }
+
+        using var owned = response;
+        ThrowIfError(response);
+        Expect(response, MessageKind.TextMatches);
+
+        var reader = new PayloadReader(response.Payload);
+        var matches = new TextMatch[reader.ReadInt32()];
+        for (int i = 0; i < matches.Length; i++)
+        {
+            string text = reader.ReadString() ?? string.Empty;
+            var bounds = new PageRect[reader.ReadInt32()];
+            for (int r = 0; r < bounds.Length; r++)
+            {
+                bounds[r] = new PageRect(reader.ReadDouble(), reader.ReadDouble(), reader.ReadDouble(), reader.ReadDouble());
+            }
+
+            matches[i] = new TextMatch(text, bounds);
+        }
+
+        return matches;
+    }
+
     /// <summary>
     /// Prints pages through the worker. Returns the number of pages sent to the printer, or 0 if
     /// the user cancelled when the job started (for example in a print-to-file Save dialog).

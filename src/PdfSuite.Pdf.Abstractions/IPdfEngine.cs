@@ -29,6 +29,13 @@ public interface IPdfDocument : IDisposable
     IReadOnlyList<TextLine> GetTextLines(int pageIndex);
 
     /// <summary>
+    /// Finds every occurrence of <paramref name="query"/> in the page's text, in the order the
+    /// engine extracts it. Case-insensitive unless <paramref name="matchCase"/>. Text the reader
+    /// cannot see, such as a hidden layer's, is not matched where the engine can tell.
+    /// </summary>
+    IReadOnlyList<TextMatch> FindText(int pageIndex, string query, bool matchCase = false, bool wholeWord = false);
+
+    /// <summary>
     /// Renders one region of a page, with annotations, as opaque 32-bit BGRA pixels
     /// (stride = width * 4). The page is scaled to <see cref="PageSize.ToPixels"/> at
     /// <paramref name="pixelsPerPoint"/>; the region is measured in those pixels from
@@ -53,6 +60,12 @@ public readonly record struct PixelRegion(int Left, int Top, int Width, int Heig
 
 /// <summary>One line of page text and its bounds in points, measured from the page's top-left corner.</summary>
 public sealed record TextLine(string Text, double Left, double Top, double Right, double Bottom);
+
+/// <summary>
+/// One search match: the text as it appears on the page, and its rectangles in points from the
+/// page's top-left corner (one per line or text run it spans).
+/// </summary>
+public sealed record TextMatch(string Text, IReadOnlyList<PageRect> Bounds);
 
 /// <summary>A rectangle on a page in points, measured from the page's top-left corner.</summary>
 public readonly record struct PageRect(double Left, double Top, double Right, double Bottom)

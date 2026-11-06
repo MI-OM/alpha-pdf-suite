@@ -699,6 +699,17 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
 - **Only Linux:** Windows and macOS would need their own tracing (ETW, `dtrace` or the network extension APIs). They are not covered yet.
 - **Not yet run:** this step has not run in CI. It is in a local commit.
 
+### Text search in the engine and the worker (Milestone 1)
+- **The engine:** `IPdfDocument.FindText(page, query, matchCase, wholeWord)` returns each match's text and its rectangles, from PDFium's `FPDFText_Find*`.
+- **The worker:** serves it one page per request, so tile requests are served between the pages of a long search. The client's method is `FindTextAsync`.
+- **Hidden layers:** like the reading lines, the worker leaves out matches in text a sighted reader cannot see (finding 32).
+- **Evidence:** 4 tests.
+  - The match's text and position, against the known layout of `canary-text.pdf`.
+  - The case and whole-word options.
+  - The worker returns exactly the engine's matches and rectangles.
+  - A hidden-layer canary is not found through the worker, but is found by the engine on its own, as a negative control.
+- **Not built:** the search user interface, and searching a whole document as one request.
+
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:
   - **The content-stream lexer:** 20,000 random inputs, biased towards its special characters. It never throws, and never returns more bytes than it was given.

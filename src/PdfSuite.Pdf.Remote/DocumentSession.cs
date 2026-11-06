@@ -89,6 +89,13 @@ public sealed class DocumentSession : IDisposable
         return await client.GetTextLinesAsync(documentId, pageIndex, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<TextMatch>> FindTextAsync(
+        int pageIndex, string query, bool matchCase = false, bool wholeWord = false, CancellationToken cancellationToken = default)
+    {
+        var (client, documentId) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
+        return await client.FindTextAsync(documentId, pageIndex, query, matchCase, wholeWord, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<string> GetQpdfVersionAsync(CancellationToken cancellationToken = default)
     {
         var (client, _) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);

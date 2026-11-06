@@ -228,6 +228,87 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
         }
     }
 
+    public IReadOnlyList<TextMatch> FindText(int pageIndex, string query, bool matchCase = false, bool wholeWord = false)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(query);
+        lock (PdfiumLibrary.Sync)
+        {
+            double pageHeight = GetPageSize(pageIndex).Height;
+            nint textPage = PdfiumNative.FPDFText_LoadPage(GetLoadedPage(pageIndex));
+            if (textPage == 0)
+            {
+                throw new InvalidOperationException($"PDFium could not extract text from page {pageIndex}.");
+            }
+
+            try
+            {
+                int count = PdfiumNative.FPDFText_CountChars(textPage);
+                bool[]? hidden = count > 0 ? FindHiddenCharacters(textPage, count) : null;
+                uint flags = (matchCase ? PdfiumNative.FPDF_MATCHCASE : 0) | (wholeWord ? PdfiumNative.FPDF_MATCHWHOLEWORD : 0);
+                var matches = new List<TextMatch>();
+                nint search;
+                fixed (char* q = query)
+                {
+                    search = PdfiumNative.FPDFText_FindStart(textPage, q, new CULong(flags), 0);
+                }
+
+                if (search == 0)
+                {
+                    return matches;
+                }
+
+                try
+                {
+                    while (PdfiumNative.FPDFText_FindNext(search) != 0)
+                    {
+                        int start = PdfiumNative.FPDFText_GetSchResultIndex(search);
+                        int length = PdfiumNative.FPDFText_GetSchCount(search);
+                        if (length <= 0 || start < 0 || start + length > count
+                            || (hidden is not null && Array.IndexOf(hidden, true, start, length) >= 0))
+                        {
+                            continue;
+                        }
+
+                        var text = new char[length + 1];
+                        fixed (char* p = text)
+                        {
+                            PdfiumNative.FPDFText_GetText(textPage, start, length, p);
+                        }
+
+                        matches.Add(new TextMatch(new string(text, 0, length), Rectangles(textPage, start, length, pageHeight)));
+                    }
+                }
+                finally
+                {
+                    PdfiumNative.FPDFText_FindClose(search);
+                }
+
+                return matches;
+            }
+            finally
+            {
+                PdfiumNative.FPDFText_ClosePage(textPage);
+            }
+        }
+    }
+
+    // The text rectangles of a character range, converted to top-left-origin points.
+    private static PageRect[] Rectangles(nint textPage, int start, int count, double pageHeight)
+    {
+        int rects = PdfiumNative.FPDFText_CountRects(textPage, start, count);
+        var result = new List<PageRect>(Math.Max(rects, 0));
+        for (int r = 0; r < rects; r++)
+        {
+            double left, top, right, bottom;
+            if (PdfiumNative.FPDFText_GetRect(textPage, r, &left, &top, &right, &bottom) != 0)
+            {
+                result.Add(new PageRect(left, pageHeight - top, right, pageHeight - bottom));
+            }
+        }
+
+        return [.. result];
+    }
+
     // A line made of the characters in [start, end) that are not hidden: usually all of them, as
     // one run. Hidden characters split the line into runs, whose text and bounds are joined.
     private static TextLine? VisibleLine(nint textPage, char[] text, int start, int end, bool[]? hidden, double pageHeight)

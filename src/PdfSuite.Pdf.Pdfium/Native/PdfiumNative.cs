@@ -244,6 +244,25 @@ internal static unsafe partial class PdfiumNative
     [LibraryImport(Library)]
     internal static partial int FPDFPageObj_GetMarkedContentID(nint pageObject);
 
+    // Text search. The query is NUL-terminated UTF-16. Flags: FPDF_MATCHCASE, FPDF_MATCHWHOLEWORD.
+    internal const uint FPDF_MATCHCASE = 0x1;
+    internal const uint FPDF_MATCHWHOLEWORD = 0x2;
+
+    [LibraryImport(Library)]
+    internal static partial nint FPDFText_FindStart(nint textPage, char* query, CULong flags, int startIndex);
+
+    [LibraryImport(Library)]
+    internal static partial int FPDFText_FindNext(nint search);
+
+    [LibraryImport(Library)]
+    internal static partial int FPDFText_GetSchResultIndex(nint search);
+
+    [LibraryImport(Library)]
+    internal static partial int FPDFText_GetSchCount(nint search);
+
+    [LibraryImport(Library)]
+    internal static partial void FPDFText_FindClose(nint search);
+
     // Structure tree (tagged PDF). A child that is marked content rather than an element comes
     // back from GetChildAtIndex as null, and its ID from GetChildMarkedContentID.
     [LibraryImport(Library)]
