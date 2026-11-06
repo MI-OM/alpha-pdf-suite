@@ -28,6 +28,7 @@
 | Printing (S3) | Prototyped: native dialog, worker renders | Not started (estimated 2–5 days) | Not started (estimated 2–3 days) |
 | Packages (S6) | MSIX installs and launches. Test certificate only | DMG installs and launches. Signed ad hoc, not notarised, and Gatekeeper rejects it | .deb and AppImage install and launch |
 | Worker resource limits | Memory cap: the Job Object refuses allocations over it | Memory cap: the worker is stopped when its footprint goes over (checked every 250 ms) | Memory cap: `RLIMIT_DATA`, which the worker sets on itself, refuses allocations over it |
+| No network use while reading | Not checked | Not checked | Checked in CI under `strace` (added 2026-11-06, not yet run) |
 | Worker OS sandbox | None | None | None |
 | Architectures built | x64 (arm64 not built) | arm64 (x64 not built) | x64 (arm64 not built) |
 | **Supported** | **No** | **No** | **No** |

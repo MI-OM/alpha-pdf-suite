@@ -693,6 +693,12 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
   - 80 tests pass.
 - **Still open:** reading order for untagged pages, which needs layout analysis (a dependency decision). Whether artifacts such as running headers should be read at all is a product decision; PDF/UA says they are not content.
 
+### No network use while reading (PRD §9; Milestone 1 acceptance)
+- **The check:** the Package workflow runs the installed .deb's smoke test under `strace` in the bare Ubuntu container. It fails if the app or its worker opens an IPv4 or IPv6 socket while opening, rendering and loading qpdf. Local sockets, for X11 and D-Bus, are allowed.
+- **Negative control:** bash connecting to a closed local port, under the same trace, must be caught, or the step fails as proving nothing.
+- **Only Linux:** Windows and macOS would need their own tracing (ETW, `dtrace` or the network extension APIs). They are not covered yet.
+- **Not yet run:** this step has not run in CI. It is in a local commit.
+
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:
   - **The content-stream lexer:** 20,000 random inputs, biased towards its special characters. It never throws, and never returns more bytes than it was given.

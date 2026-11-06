@@ -227,6 +227,24 @@ jobs:
       - name: Launch the installed app
         run: sh tools/package/smoke-test.sh ".deb installed" packages/large-2000-pages.pdf 3 pdf-suite
 
+      # PRD §9: reading makes no network request. The app runs under strace and must open no IPv4
+      # or IPv6 socket; local sockets (X11, D-Bus) are fine. The control shows the trace would
+      # catch one: bash connecting to a closed local port opens an IPv4 socket.
+      - name: No network use while reading
+        run: |
+          apt-get install -y --no-install-recommends strace
+          trace="$RUNNER_TEMP/network.txt"
+          sh tools/package/smoke-test.sh ".deb under strace" packages/large-2000-pages.pdf 1 strace -f -qq -e trace=socket,connect -o "$trace" pdf-suite
+          echo "Socket families: $(grep -o 'socket(AF_[A-Z0-9]*' "$trace" | sort | uniq -c | tr -s ' \n' ' ')"
+          if grep 'AF_INET' "$trace"; then
+            echo "::error title=Network::The app opened an IP socket while reading."
+            exit 1
+          fi
+          control="$RUNNER_TEMP/control.txt"
+          strace -f -qq -e trace=socket,connect -o "$control" bash -c 'exec 3<>/dev/tcp/127.0.0.1/9' || true
+          grep -q 'socket(AF_INET,' "$control" || { echo "::error title=Network::The control was not traced, so the check proves nothing."; exit 1; }
+          echo "::notice title=Network::No IP socket while opening and rendering; $(grep -c . "$trace") socket and connect calls traced, and the control was caught"
+
       - name: Remove
         run: |
           apt-get remove -y pdf-suite-spike
