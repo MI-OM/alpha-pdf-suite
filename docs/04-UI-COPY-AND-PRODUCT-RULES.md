@@ -178,6 +178,20 @@ Do not promise OCR will always recognize every word correctly. Show the search l
 - Stopped: The search stopped because the rendering process stopped. 12 matches found. Search again to retry.
 - Toolbar button: Search. Close button: Close, with the tooltip "Close the search bar".
 
+## 5a. Document Properties (proposed 2026-11-07, for review)
+
+**Heading:** Document Properties
+
+**Rows:** File, File size, Pages, Page size, PDF version, Title, Author, Subject, Keywords, Created, Modified, Application, PDF producer, Tagged PDF, Security. For an encrypted document also: Printing, Copying text, Changing the document, Comments and form filling, Page assembly, each "Allowed" or "Not allowed".
+
+**Missing value:** Not set
+
+**Page size:** in inches and millimetres; when pages differ: "… on the first page; pages differ in size"
+
+**Dates:** in the reader's own date format. A date that is not a valid PDF date is shown as the document wrote it.
+
+**Messages:** "Open a PDF to see its properties." and "We couldn't read this document's properties."
+
 ## 6. Password-protected document
 
 **Heading:** This document is password-protected

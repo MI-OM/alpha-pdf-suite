@@ -302,6 +302,39 @@ public sealed class WorkerClient : IDisposable
         return new PayloadReader(response.Payload).ReadString() ?? string.Empty;
     }
 
+    /// <summary>The document's information, version, encryption, permissions and tagging; see <see cref="IPdfDocument.GetDocumentInfo"/>.</summary>
+    public async Task<DocumentInfo> GetDocumentInfoAsync(int documentId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        int id = NextRequestId();
+        Pending pending = Register(id);
+        byte[] payload = new byte[4];
+        new PayloadWriter(payload).WriteInt32(documentId);
+        Send(MessageKind.GetDocumentInfo, id, payload);
+
+        Message response;
+        using (cancellationToken.Register(() => CancelRequest(id)))
+        {
+            response = await pending.Completion.Task.ConfigureAwait(false);
+        }
+
+        using var owned = response;
+        ThrowIfError(response);
+        Expect(response, MessageKind.DocumentInfo);
+
+        var reader = new PayloadReader(response.Payload);
+        string? version = reader.ReadString();
+        int flags = reader.ReadInt32();
+        PdfPermissions permissions = PermissionBits.Decode(reader.ReadInt32());
+        var metadata = new Dictionary<string, string>();
+        for (int count = reader.ReadInt32(); count > 0; count--)
+        {
+            metadata[reader.ReadString() ?? string.Empty] = reader.ReadString() ?? string.Empty;
+        }
+
+        return new DocumentInfo(metadata, version, Encrypted: (flags & 1) != 0, permissions, Tagged: (flags & 2) != 0);
+    }
+
     /// <summary>Finds text on one page; see <see cref="IPdfDocument.FindText"/>.</summary>
     public async Task<IReadOnlyList<TextMatch>> FindTextAsync(
         int documentId, int pageIndex, string query, bool matchCase = false, bool wholeWord = false, CancellationToken cancellationToken = default)

@@ -20,6 +20,7 @@ internal sealed class MainWindow : Window
     private readonly TextBlock _status;
     private readonly SearchPanel _searchPanel;
     private string _documentName = string.Empty;
+    private long _documentSize;
     private string? _message;
 
     // The search being shown, and what it was started with; a different query or option starts a new one.
@@ -45,15 +46,20 @@ internal sealed class MainWindow : Window
         var search = new Button { Content = "Search", Margin = new Thickness(8, 0, 0, 0) };
         ToolTip.SetTip(search, "Search this document");
         search.Click += (_, _) => OpenSearch();
+        var properties = new Button { Content = "Document Properties", Margin = new Thickness(8, 0, 0, 0) };
+        ToolTip.SetTip(properties, "Show this document's properties");
+        properties.Click += async (_, _) => await ShowPropertiesAsync();
         _status = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0) };
 
         var bar = new DockPanel { Margin = new Thickness(8) };
         DockPanel.SetDock(open, Dock.Left);
         DockPanel.SetDock(print, Dock.Left);
         DockPanel.SetDock(search, Dock.Left);
+        DockPanel.SetDock(properties, Dock.Left);
         bar.Children.Add(open);
         bar.Children.Add(print);
         bar.Children.Add(search);
+        bar.Children.Add(properties);
         bar.Children.Add(_status);
 
         _searchPanel = new SearchPanel { IsVisible = false };
@@ -187,6 +193,7 @@ internal sealed class MainWindow : Window
             _view.SetDocument(session);
             previous?.Dispose();
             _documentName = name;
+            _documentSize = data.LongLength;
             AutomationProperties.SetName(_view, name);
             ShowMessage(null);
             _view.Focus();
@@ -224,6 +231,10 @@ internal sealed class MainWindow : Window
                 e.Handled = true;
                 OpenSearch();
                 break;
+            case Avalonia.Input.Key.D when modifiers == Avalonia.Input.KeyModifiers.Control:
+                e.Handled = true;
+                _ = ShowPropertiesAsync();
+                break;
             case Avalonia.Input.Key.F3 when modifiers is Avalonia.Input.KeyModifiers.None or Avalonia.Input.KeyModifiers.Shift:
                 e.Handled = true;
                 if (!_searchPanel.IsVisible)
@@ -233,6 +244,31 @@ internal sealed class MainWindow : Window
 
                 _ = FindAsync(forward: modifiers == Avalonia.Input.KeyModifiers.None);
                 break;
+        }
+    }
+
+    private async Task ShowPropertiesAsync()
+    {
+        if (_view.Session is not DocumentSession session)
+        {
+            ShowMessage("Open a PDF to see its properties.");
+            return;
+        }
+
+        DocumentInfo info;
+        try
+        {
+            info = await session.GetDocumentInfoAsync();
+        }
+        catch (Exception ex) when (ex is WorkerException or WorkerExitedException)
+        {
+            ShowMessage("We couldn't read this document's properties.");
+            return;
+        }
+
+        if (session == _view.Session)
+        {
+            await new PropertiesDialog(_documentName, _documentSize, session.PageSizes, info).ShowDialog(this);
         }
     }
 

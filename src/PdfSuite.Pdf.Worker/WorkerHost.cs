@@ -105,6 +105,9 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
                 case MessageKind.FindText:
                     FindText(request);
                     break;
+                case MessageKind.GetDocumentInfo:
+                    GetDocumentInfo(request);
+                    break;
                 case MessageKind.Print:
                     Print(request);
                     break;
@@ -292,6 +295,29 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
         }
 
         MessageIO.Write(output, MessageKind.TextMatches, request.RequestId, payload);
+    }
+
+    // Payload: [docId]. Response: [version][int32 flags: 1 encrypted, 2 tagged][int32 permission bits]
+    // [int32 n] then n x [key][value].
+    private void GetDocumentInfo(in Message request)
+    {
+        var reader = new PayloadReader(request.Payload);
+        DocumentInfo info = _documents[reader.ReadInt32()].GetDocumentInfo();
+
+        byte[] payload = new byte[PayloadWriter.SizeOf(info.PdfVersion) + 12
+            + info.Metadata.Sum(m => PayloadWriter.SizeOf(m.Key) + PayloadWriter.SizeOf(m.Value))];
+        var writer = new PayloadWriter(payload);
+        writer.WriteString(info.PdfVersion);
+        writer.WriteInt32((info.Encrypted ? 1 : 0) | (info.Tagged ? 2 : 0));
+        writer.WriteInt32(PermissionBits.Encode(info.Permissions));
+        writer.WriteInt32(info.Metadata.Count);
+        foreach (var (key, value) in info.Metadata)
+        {
+            writer.WriteString(key);
+            writer.WriteString(value);
+        }
+
+        MessageIO.Write(output, MessageKind.DocumentInfo, request.RequestId, payload);
     }
 
     // Payload: [int32 count] then per line [4 x double bounds][int32 UTF-8 length][UTF-8 text].

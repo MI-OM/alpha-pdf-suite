@@ -42,6 +42,9 @@ public interface IPdfDocument : IDisposable
     /// the scaled page's top-left corner.
     /// </summary>
     void RenderRegion(int pageIndex, double pixelsPerPoint, PixelRegion region, Span<byte> bgra);
+
+    /// <summary>The document's information keys, PDF version, encryption, permissions and whether it is tagged.</summary>
+    DocumentInfo GetDocumentInfo();
 }
 
 /// <summary>Page width and height in PDF points (1/72 inch), as reported by the engine.</summary>

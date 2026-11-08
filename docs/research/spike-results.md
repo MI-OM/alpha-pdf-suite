@@ -767,6 +767,22 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
   - 2 tests: a session refuses no password and a wrong one, and opens with the right one; and it reopens a protected document after the worker is killed.
   - Through UI Automation, on an AES-256 file: the dialog appeared; a wrong password kept it open with the message; the right one opened the document on page 1 of 3; Cancel, in a second launch, left "No document open."
 
+### Document properties (Milestone 1, 2026-11-07)
+- **The engine and the worker** report a document's information keys, PDF version, encryption, permissions and whether it is tagged (`GetDocumentInfo`, a new worker request), read by PDFium from the open document.
+  - **Permissions** are those the document was opened with: all of them for an unencrypted document or one opened with its owner password. The app uses "copy text" (decisions for review, D1).
+  - **Tagged** follows ISO 32000-1 §14.8.1: `/MarkInfo << /Marked true >>` in the catalog. A structure tree alone, as in the document-level canary fixture, does not count.
+  - **PDF dates** (`D:20261107143000+01'00'` and its shorter forms) are parsed by `PdfDate`, in the abstractions.
+- **The Document Properties dialog** (button, or Ctrl+D) shows them with the file size and page size. Its wording is proposed in the copy rules (§5a).
+- **Evidence (Windows):**
+  - 17 tests:
+    - non-ASCII metadata, the same through the worker as from the engine
+    - tagged only with `/MarkInfo`, which a first test got wrong by expecting the structure tree to count
+    - a copy-restricted document's permissions, lifted by its owner password
+    - 14 date cases, valid and invalid
+  - Through UI Automation:
+    - On a copy-restricted file: "Encrypted", with Copying text, Changing the document and Page assembly "Not allowed".
+    - On the 2,000-page fixture: 2,000 pages, and "pages differ in size".
+
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:
   - **The content-stream lexer:** 20,000 random inputs, biased towards its special characters. It never throws, and never returns more bytes than it was given.

@@ -116,6 +116,12 @@ public sealed class DocumentSession : IDisposable
         }
     }
 
+    public async Task<DocumentInfo> GetDocumentInfoAsync(CancellationToken cancellationToken = default)
+    {
+        var (client, documentId, _) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
+        return await client.GetDocumentInfoAsync(documentId, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<string> GetQpdfVersionAsync(CancellationToken cancellationToken = default)
     {
         var (client, _, _) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);

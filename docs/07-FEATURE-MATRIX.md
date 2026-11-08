@@ -48,7 +48,7 @@ A platform is declared supported only when PRD §6's conditions are met: a clean
 | Search with next, previous and match counts | v1 | Prototyped | A search bar (Ctrl+F) with next and previous, match case, whole words, and "Match N of M". Matches are highlighted, the current one with an outline. The whole document is searched from the page in view, one page per worker request, so rendering is not held up: 2,000 pages in 1.8–3.4 s in the installed packages in CI, on all three OSes. It carries on after a worker crash. Text in hidden layers is not matched. Not yet checked with a screen reader, and keyboard shortcuts are not tested automatically |
 | Select and copy text | v1 | Not started | — |
 | Thumbnails, bookmarks, outline, attachments panel | v1 | Not started | The engine counts attachments |
-| Document properties and metadata | v1 | Prototyped (engine only) | Read by PDFium and qpdf. No user interface |
+| Document properties and metadata | v1 | Prototyped | A Document Properties dialog (Ctrl+D): file size, pages, page size, PDF version, the document information keys, dates in the reader's format, whether it is tagged, and, when encrypted, its permissions. Read by PDFium in the worker; qpdf reads and writes the keys too (S4) |
 | Print preview | v1 | Not started | The Windows 11 dialog says "This app doesn't support print preview" (spike finding 22) |
 | Printing | v1 | Prototyped (Windows) | Text prints as outlines, at about 1 s per page (finding 21) |
 | Recently opened files | v1 | Not started | — |

@@ -48,6 +48,23 @@ internal static unsafe partial class PdfiumNative
     [LibraryImport(Library, StringMarshalling = StringMarshalling.Utf8)]
     internal static partial CULong FPDF_GetMetaText(nint document, string tag, void* buffer, CULong bufferLength);
 
+    // The version as 10 times its value (14 for PDF 1.4). Returns false if it is unknown.
+    [LibraryImport(Library)]
+    internal static partial int FPDF_GetFileVersion(nint document, int* fileVersion);
+
+    // The access permissions this document was opened with: all bits for an unencrypted document,
+    // or one opened with its owner password.
+    [LibraryImport(Library)]
+    internal static partial CULong FPDF_GetDocPermissions(nint document);
+
+    // The standard security handler's revision, or -1 if the document is not encrypted.
+    [LibraryImport(Library)]
+    internal static partial int FPDF_GetSecurityHandlerRevision(nint document);
+
+    // fpdf_catalog.h
+    [LibraryImport(Library)]
+    internal static partial int FPDFCatalog_IsTagged(nint document);
+
     [LibraryImport(Library)]
     internal static partial int FPDF_GetPageSizeByIndexF(nint document, int pageIndex, FS_SIZEF* size);
 

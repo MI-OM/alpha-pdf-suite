@@ -655,6 +655,35 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
         }
     }
 
+    public DocumentInfo GetDocumentInfo()
+    {
+        var metadata = new Dictionary<string, string>();
+        foreach (string key in DocumentInfo.Keys)
+        {
+            string value = GetMetadata(key);
+            if (value.Length > 0)
+            {
+                metadata[key] = value;
+            }
+        }
+
+        lock (PdfiumLibrary.Sync)
+        {
+            ThrowIfDisposed();
+            int version = 0;
+            string? pdfVersion = PdfiumNative.FPDF_GetFileVersion(_document, &version) != 0 && version > 0
+                ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{version / 10}.{version % 10}")
+                : null;
+            bool encrypted = PdfiumNative.FPDF_GetSecurityHandlerRevision(_document) >= 0;
+
+            // CULong is 64-bit on Linux and macOS; the permission bits are the low 32.
+            uint bits = unchecked((uint)PdfiumNative.FPDF_GetDocPermissions(_document).Value);
+            PdfPermissions permissions = encrypted ? DocumentInfo.FromPermissionBits(bits) : DocumentInfo.AllPermitted;
+            bool tagged = PdfiumNative.FPDFCatalog_IsTagged(_document) != 0;
+            return new DocumentInfo(metadata, pdfVersion, encrypted, permissions, tagged);
+        }
+    }
+
     public int AttachmentCount
     {
         get
