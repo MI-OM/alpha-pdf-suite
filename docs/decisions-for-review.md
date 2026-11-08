@@ -29,8 +29,11 @@ Eight local commits, none pushed (`git log origin/main..HEAD`). Each is one feat
   - outline entries without accessible names, and drawn in no colour
   - two Avalonia menu flyout behaviours
 - **New finding 55:** Avalonia's tree items lack UI Automation's expand and collapse pattern.
+- **Pushed 2026-11-07 after review; CI at `adc9836`** (CI run 42442164701, Package run 42442164704): every job passed.
+  - All 129 tests ran on each OS: 126 passed on Windows, 125 on macOS and Linux (which also skip the Windows-only print test).
+  - Every package searched all 2,000 pages and selected the shown page's text (3,109 characters), through its NativeAOT build. The network check passed with both in the traced run, and the glibc floor stayed at 2.34.
 - **Not verified:**
-  - macOS and Linux, because nothing has been pushed for CI to run
+  - the new UI on macOS and Linux: CI checks the engine and worker features, search and selection there, not the dialogs, toolbar or sidebar
   - keyboard shortcuts, as no keystrokes were sent to the desktop
   - real screen readers
 - **To push:** this machine's active GitHub account is `ININ-Org`, which cannot push to the repository. Push as `MI-OM`, or switch the default account first.

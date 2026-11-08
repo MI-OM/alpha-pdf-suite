@@ -867,6 +867,13 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
   - Choosing one that had been deleted gave the usual message and removed it.
   - Clear recent history left "No recent documents" and deleted the file. A smoke test added nothing.
 
+### CI at `adc9836` (2026-11-07): the overnight features on all three OSes
+- **CI run 42442164701 and Package run 42442164704:** every job passed.
+- **Tests:** all 129 ran on each OS, the 31 added overnight included. 126 passed on Windows; 125 on macOS and Linux, which also skip the Windows-only print test.
+- **Every package** searched all 2,000 pages, drew the match, and selected the shown page's text (3,109 characters), through its NativeAOT build. Searching took 1.8–3.3 s in the installed packages.
+- **The network check** passed with search and selection in the traced run. The glibc floor stayed at 2.34.
+- **Not covered by CI:** the dialogs, toolbar and sidebar on macOS and Linux, keyboard shortcuts, and real screen readers.
+
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:
   - **The content-stream lexer:** 20,000 random inputs, biased towards its special characters. It never throws, and never returns more bytes than it was given.
