@@ -42,9 +42,9 @@ A platform is declared supported only when PRD §6's conditions are met: a clean
 | Open local PDF files | v1 | Prototyped | From the command line or the native Open dialog. Parsed only in the worker |
 | Multiple documents and tabs | v1 | Not started | The spike viewer shows one document |
 | Single-page, continuous, facing-page and presentation modes | v1 | Prototyped (continuous only) | — |
-| Zoom | v1 | Prototyped | Ctrl + wheel, and Ctrl + plus or minus, from 10% to 1,600%. Performance measured at 25–800% (S1) |
-| Fit to width, fit to page, rotation | v1 | Not started | — |
-| Page navigation | v1 | Prototyped | PageDown and PageUp, Ctrl+Home and Ctrl+End, the scroll wheel |
+| Zoom | v1 | Prototyped | Zoom out and in buttons, Ctrl + wheel, and Ctrl + plus or minus, from 10% to 1,600%. Performance measured at 25–800% (S1) |
+| Fit to width, fit to page, rotation | v1 | Prototyped (fit width, fit page and actual size; rotation not started) | Buttons, and Ctrl+2, Ctrl+0 and Ctrl+1. A fit is kept as the window is resized |
+| Page navigation | v1 | Prototyped | Previous and next buttons, a page number box (Ctrl+G; Enter goes to the page), PageDown and PageUp, Ctrl+Home and Ctrl+End, the scroll wheel |
 | Search with next, previous and match counts | v1 | Prototyped | A search bar (Ctrl+F) with next and previous, match case, whole words, and "Match N of M". Matches are highlighted, the current one with an outline. The whole document is searched from the page in view, one page per worker request, so rendering is not held up: 2,000 pages in 1.8–3.4 s in the installed packages in CI, on all three OSes. It carries on after a worker crash. Text in hidden layers is not matched. Not yet checked with a screen reader, and keyboard shortcuts are not tested automatically |
 | Select and copy text | v1 | Not started | — |
 | Thumbnails, bookmarks, outline, attachments panel | v1 | Not started | The engine counts attachments |

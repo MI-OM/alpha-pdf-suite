@@ -783,6 +783,16 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
     - On a copy-restricted file: "Encrypted", with Copying text, Changing the document and Page assembly "Not allowed".
     - On the 2,000-page fixture: 2,000 pages, and "pages differ in size".
 
+### Page navigation and zoom (Milestone 1, 2026-11-07)
+- **A second toolbar row**, from the copy rules' reader toolbar (§4) and View menu (§3):
+  - Previous and next page, the current page out of the total (Ctrl+G focuses it; Enter goes to the typed page), and zoom out and in.
+  - **Fit Width**, **Fit Page** and **Actual Size**, also Ctrl+2, Ctrl+0 and Ctrl+1 (decisions for review, D7). A fit is kept as the window is resized, without moving the reading position.
+- **A layout bug, found and fixed:** in a document with wider pages elsewhere (this fixture's landscape pages), a fitted page was shown shifted and cut off. That happened because pages are centred across the widest page; a fit now also centres the view.
+- **Evidence (Windows), through UI Automation:**
+  - Next and previous changed the page by one, and the page box followed; Previous was disabled on page 1.
+  - Fit Width gave 120%, Fit Page 61% and Actual Size 100%; zoom in and out stepped by 25%. A screenshot showed the fitted page whole.
+  - **Not verified:** typing a page number, which needs Enter pressed.
+
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:
   - **The content-stream lexer:** 20,000 random inputs, biased towards its special characters. It never throws, and never returns more bytes than it was given.

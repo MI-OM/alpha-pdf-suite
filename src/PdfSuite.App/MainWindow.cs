@@ -19,6 +19,7 @@ internal sealed class MainWindow : Window
     private readonly DocumentView _view;
     private readonly TextBlock _status;
     private readonly SearchPanel _searchPanel;
+    private readonly NavigationBar _navigation;
     private string _documentName = string.Empty;
     private long _documentSize;
     private string? _message;
@@ -62,6 +63,7 @@ internal sealed class MainWindow : Window
         bar.Children.Add(properties);
         bar.Children.Add(_status);
 
+        _navigation = new NavigationBar(_view);
         _searchPanel = new SearchPanel { IsVisible = false };
         _searchPanel.FindRequested += forward => _ = FindAsync(forward);
         _searchPanel.QueryChanged += OnSearchQueryChanged;
@@ -70,8 +72,10 @@ internal sealed class MainWindow : Window
 
         var root = new DockPanel();
         DockPanel.SetDock(bar, Dock.Top);
+        DockPanel.SetDock(_navigation, Dock.Top);
         DockPanel.SetDock(_searchPanel, Dock.Top);
         root.Children.Add(bar);
+        root.Children.Add(_navigation);
         root.Children.Add(_searchPanel);
         root.Children.Add(_view);
         Content = root;
@@ -230,6 +234,10 @@ internal sealed class MainWindow : Window
             case Avalonia.Input.Key.F when modifiers == Avalonia.Input.KeyModifiers.Control:
                 e.Handled = true;
                 OpenSearch();
+                break;
+            case Avalonia.Input.Key.G when modifiers == Avalonia.Input.KeyModifiers.Control:
+                e.Handled = true;
+                _navigation.FocusPageNumber();
                 break;
             case Avalonia.Input.Key.D when modifiers == Avalonia.Input.KeyModifiers.Control:
                 e.Handled = true;

@@ -13,6 +13,13 @@ using PdfSuite.Pdf.Remote;
 
 namespace PdfSuite.App;
 
+internal enum ZoomMode
+{
+    Custom,
+    FitWidth,
+    FitPage,
+}
+
 /// <summary>Per-frame drawing statistics, read by the status bar, the S1 benchmark and the smoke test.</summary>
 internal readonly record struct FrameStats(
     int VisibleTiles, int SharpTiles, int PreviewOnlyTiles, int BlankTiles, TimeSpan RenderTime,
@@ -143,9 +150,43 @@ internal sealed class DocumentView : Control
         InvalidateAndUpdate();
     }
 
+    /// <summary>How the zoom was chosen. A fit mode is applied again when the view is resized.</summary>
+    public ZoomMode ZoomMode { get; private set; } = ZoomMode.Custom;
+
+    public int PageCount => _pageTops.Length;
+
+    /// <summary>Zooms so the page in view fills the view's width, and keeps that as the view is resized.</summary>
+    public void FitWidth() => ApplyFit(ZoomMode.FitWidth);
+
+    /// <summary>Zooms so the whole page in view fits, and keeps that as the view is resized.</summary>
+    public void FitPage() => ApplyFit(ZoomMode.FitPage);
+
+    // From a command, the page in view is brought to the top; on a resize, the view only rescales.
+    private void ApplyFit(ZoomMode mode, bool toPageTop = true)
+    {
+        if (_session is null || _pageTops.Length == 0 || Bounds.Width <= 0 || Bounds.Height <= 0)
+        {
+            return;
+        }
+
+        int page = CurrentPage;
+        PageSize size = _session.PageSizes[page];
+        double byWidth = (Bounds.Width - (2 * PageGap)) / (size.Width * DipsPerPoint);
+        double byHeight = (Bounds.Height - (2 * PageGap)) / (size.Height * DipsPerPoint);
+        SetZoom(mode == ZoomMode.FitPage ? Math.Min(byWidth, byHeight) : byWidth);
+        ZoomMode = mode;
+
+        // Pages are centred across the widest page, so a wider page elsewhere (a landscape page in
+        // a portrait document) makes the view scroll sideways. Centring it shows the fitted page whole.
+        double centreX = Math.Max(0, (_extentWidth - Bounds.Width) / 2);
+        double y = toPageTop ? _pageTops[page] - PageGap : _offset.Y;
+        ScrollTo(new Vector(centreX, y));
+    }
+
     /// <summary>Sets the zoom (1 = actual size), keeping the document point at the viewport's centre still.</summary>
     public void SetZoom(double zoom)
     {
+        ZoomMode = ZoomMode.Custom;
         zoom = Math.Clamp(zoom, 0.1, 16);
         if (_session is null || zoom == _zoom)
         {
@@ -371,6 +412,10 @@ internal sealed class DocumentView : Control
         base.OnSizeChanged(e);
         RecomputePageLayout();
         ScrollTo(_offset);
+        if (ZoomMode != ZoomMode.Custom)
+        {
+            ApplyFit(ZoomMode, toPageTop: false);
+        }
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
@@ -417,7 +462,11 @@ internal sealed class DocumentView : Control
             case Key.Space: ScrollBy(e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? -Bounds.Height * 0.9 : Bounds.Height * 0.9); break;
             case Key.OemPlus or Key.Add when control: SetZoom(_zoom * 1.25); break;
             case Key.OemMinus or Key.Subtract when control: SetZoom(_zoom * 0.8); break;
-            case Key.D0 or Key.NumPad0 when control: SetZoom(1); break;
+
+            // The usual PDF reader keys: Ctrl+0 fit page, Ctrl+1 actual size, Ctrl+2 fit width.
+            case Key.D0 or Key.NumPad0 when control: FitPage(); break;
+            case Key.D1 or Key.NumPad1 when control: SetZoom(1); break;
+            case Key.D2 or Key.NumPad2 when control: FitWidth(); break;
             default: e.Handled = false; break;
         }
     }

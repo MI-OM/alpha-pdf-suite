@@ -14,6 +14,7 @@
 | D3 | **Keep refusing documents whose pages cannot be read** (finding 51's open question), rather than showing the readable pages. | Refusing is the safe default until the reader milestones design partial display, with a clear warning | PRD §9 (no silent data problems) |
 | D4 | **No layout-analysis dependency (PdfPig) for now.** Untagged pages keep PDFium's reading order (finding 16). | No measured need yet, and every dependency adds licence and update work. PdfPig is Apache-2.0, so adding it later stays possible | Licence compatibility (ADR-0004) |
 | D5 | **Select All selects the text of the page in view, not the whole document.** | A 2,000-page document's text on the clipboard is slow and rarely wanted. Whole-document copy can come with export (Milestone 3) | — |
+| D7 | **Zoom keys follow the common PDF reader convention:** Ctrl+0 Fit Page, Ctrl+1 Actual Size, Ctrl+2 Fit Width; Ctrl+G goes to a page, Ctrl+D shows Document Properties. Ctrl+0 used to mean actual size. | People bring these keys from other readers | WCAG 2.2 SC 2.1.1 (keyboard), SC 2.1.4 (no single-key shortcuts) |
 | D6 | **Search and other messages the copy rules lacked** are written in the rules' style and listed in §5 of the UI copy rules as proposals. | The copy rules are the source of truth; new wording goes there for review, not only into code | UI copy rules §16 |
 
 ## Still open (needs the maintainer)
