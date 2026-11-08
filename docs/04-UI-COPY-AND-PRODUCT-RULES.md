@@ -212,6 +212,16 @@ Do not promise OCR will always recognize every word correctly. Show the search l
 
 **An entry that goes nowhere in this document,** such as a link to a website: its title, then "(not a page in this document)". Choosing it does nothing; external links need the confirmation in §12.
 
+## 5d. Recent documents (proposed 2026-11-07, for review)
+
+**Toolbar button:** Open Recent (§3), with the tooltip "Open a recently opened document"
+
+**Entries:** each file's name, with its full path as the tooltip
+
+**Last entry:** Clear recent history (§14)
+
+**Empty:** No recent documents, shown disabled (§2 allows hiding the action or explaining)
+
 ## 6. Password-protected document
 
 **Heading:** This document is password-protected

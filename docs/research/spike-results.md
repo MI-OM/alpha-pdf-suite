@@ -851,6 +851,22 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
     - Two bugs were found this way and fixed: the entries first had no accessible names, and their titles were drawn in no colour.
 - **Finding 55** below: Avalonia's tree items do not offer UI Automation's expand and collapse pattern. The top level is expanded by default.
 
+### Recent documents (Milestone 2, 2026-11-07)
+- **Open Recent** lists the last 10 documents opened from a file, newest first; **Clear recent history** forgets them.
+  - Only full paths are kept, in `recent-files.json` in the user's application data folder. It is written to a temporary file and moved into place, so a crash cannot leave half a list (decisions for review, D8).
+  - A document that has gone is opened as usual, gets the usual "We couldn't open this PDF…", and leaves the list.
+  - Smoke tests and benchmarks add nothing. `PDF_SUITE_SETTINGS_DIR` points the list elsewhere, for tests.
+- **Two Avalonia behaviours, worked around:**
+  - A menu flyout with no items yet does not open, so it cannot be filled as it opens.
+  - A flyout that has been shown keeps its first items when they are replaced, so a new one is made after each change.
+  - Both were found through UI Automation.
+- **The AOT analyzers caught a reflection path** in writing the JSON (`JsonArray.Add<T>`); the list is written with System.Text.Json's DOM, as the benchmark's results are.
+- **Evidence (Windows), through UI Automation, with the list in a scratch folder:**
+  - After three documents the file held three full paths, newest first.
+  - Started with no document, Open Recent listed them; choosing one opened it and moved it to the top.
+  - Choosing one that had been deleted gave the usual message and removed it.
+  - Clear recent history left "No recent documents" and deleted the file. A smoke test added nothing.
+
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:
   - **The content-stream lexer:** 20,000 random inputs, biased towards its special characters. It never throws, and never returns more bytes than it was given.

@@ -22,6 +22,8 @@ internal sealed class MainWindow : Window
     private readonly SearchPanel _searchPanel;
     private readonly NavigationBar _navigation;
     private readonly OutlinePanel _outline;
+    private readonly RecentFiles _recent = new(RecentFiles.DefaultDirectory());
+    private readonly Button _openRecent;
     private string _documentName = string.Empty;
     private long _documentSize;
     private string? _message;
@@ -52,6 +54,10 @@ internal sealed class MainWindow : Window
         var search = new Button { Content = "Search", Margin = new Thickness(8, 0, 0, 0) };
         ToolTip.SetTip(search, "Search this document");
         search.Click += (_, _) => OpenSearch();
+        _openRecent = new Button { Content = "Open Recent", Margin = new Thickness(8, 0, 0, 0) };
+        ToolTip.SetTip(_openRecent, "Open a recently opened document");
+        // Filled now and after every change: Avalonia does not open a menu flyout that has no items yet.
+        FillRecentMenu();
         var sidebar = new Button { Content = "Outline", Margin = new Thickness(8, 0, 0, 0) };
         ToolTip.SetTip(sidebar, "Show or hide the document sidebar");
         var properties = new Button { Content = "Document Properties", Margin = new Thickness(8, 0, 0, 0) };
@@ -61,12 +67,14 @@ internal sealed class MainWindow : Window
 
         var bar = new DockPanel { Margin = new Thickness(8) };
         DockPanel.SetDock(open, Dock.Left);
+        DockPanel.SetDock(_openRecent, Dock.Left);
         DockPanel.SetDock(close, Dock.Left);
         DockPanel.SetDock(print, Dock.Left);
         DockPanel.SetDock(search, Dock.Left);
         DockPanel.SetDock(properties, Dock.Left);
         DockPanel.SetDock(sidebar, Dock.Left);
         bar.Children.Add(open);
+        bar.Children.Add(_openRecent);
         bar.Children.Add(close);
         bar.Children.Add(print);
         bar.Children.Add(search);
@@ -131,7 +139,16 @@ internal sealed class MainWindow : Window
             return false;
         }
 
-        return await OpenAsync(data, Path.GetFileName(path));
+        bool opened = await OpenAsync(data, Path.GetFileName(path));
+
+        // Smoke tests and benchmarks leave the list alone.
+        if (opened && !_options.SmokeTest && !_options.Benchmark)
+        {
+            _recent.Add(path);
+            FillRecentMenu();
+        }
+
+        return opened;
     }
 
     private async Task OnOpenedAsync()
@@ -183,7 +200,11 @@ internal sealed class MainWindow : Window
             await using Stream stream = await files[0].OpenReadAsync();
             using var buffer = new MemoryStream();
             await stream.CopyToAsync(buffer);
-            await OpenAsync(buffer.ToArray(), files[0].Name);
+            if (await OpenAsync(buffer.ToArray(), files[0].Name) && files[0].TryGetLocalPath() is string local)
+            {
+                _recent.Add(local);
+                FillRecentMenu();
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -280,6 +301,47 @@ internal sealed class MainWindow : Window
                 _ = FindAsync(forward: modifiers == Avalonia.Input.KeyModifiers.None);
                 break;
         }
+    }
+
+    // Rebuilt whenever the list changes. A document that has gone is opened as usual,
+    // fails with the usual message, and leaves the list.
+    private void FillRecentMenu()
+    {
+        var items = new List<Control>();
+        foreach (string path in _recent.Paths)
+        {
+            var item = new MenuItem { Header = Path.GetFileName(path) };
+            ToolTip.SetTip(item, path);
+            AutomationProperties.SetHelpText(item, path);
+            item.Click += async (_, _) =>
+            {
+                if (!await OpenFileAsync(path) && !File.Exists(path))
+                {
+                    _recent.Remove(path);
+                    FillRecentMenu();
+                }
+            };
+            items.Add(item);
+        }
+
+        if (items.Count == 0)
+        {
+            items.Add(new MenuItem { Header = "No recent documents", IsEnabled = false });
+        }
+        else
+        {
+            items.Add(new Separator());
+            var clear = new MenuItem { Header = "Clear recent history" };
+            clear.Click += (_, _) =>
+            {
+                _recent.Clear();
+                FillRecentMenu();
+            };
+            items.Add(clear);
+        }
+
+        // A new flyout each time: one that has been shown keeps its first items when they are replaced.
+        _openRecent.Flyout = new MenuFlyout { ItemsSource = items };
     }
 
     /// <summary>Loads a document's outline into the sidebar. A document whose outline cannot be read shows as having none.</summary>

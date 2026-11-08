@@ -51,7 +51,7 @@ A platform is declared supported only when PRD §6's conditions are met: a clean
 | Document properties and metadata | v1 | Prototyped | A Document Properties dialog (Ctrl+D): file size, pages, page size, PDF version, the document information keys, dates in the reader's format, whether it is tagged, and, when encrypted, its permissions. Read by PDFium in the worker; qpdf reads and writes the keys too (S4) |
 | Print preview | v1 | Not started | The Windows 11 dialog says "This app doesn't support print preview" (spike finding 22) |
 | Printing | v1 | Prototyped (Windows) | Text prints as outlines, at about 1 s per page (finding 21) |
-| Recently opened files | v1 | Not started | — |
+| Recently opened files | v1 | Prototyped | Open Recent lists the last 10 documents, newest first; Clear recent history forgets them. Only paths are kept, in a local file (decisions for review, D8). A document that has gone gets the usual message and leaves the list. No setting to turn it off yet |
 | Password-protected documents | v1 | Prototyped | A password prompt (copy rules §6) that stays open after a wrong password and says so. The password is kept in memory only while the document is open, so a restarted worker can reopen it; it is never logged or saved (decisions for review, D2) |
 | Clear error messages | v1 | Prototyped | Messages for unreadable files and worker restarts, from the UI copy rules |
 
