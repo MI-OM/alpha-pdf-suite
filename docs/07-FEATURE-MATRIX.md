@@ -28,7 +28,7 @@
 | Printing (S3) | Prototyped: native dialog, worker renders | Not started (estimated 2–5 days) | Not started (estimated 2–3 days) |
 | Packages (S6) | MSIX installs and launches. Test certificate only | DMG installs and launches. Signed ad hoc, not notarised, and Gatekeeper rejects it | .deb installs and launches on Ubuntu 22.04, 24.04 and 26.04 and Debian 12 and 13; the AppImage launches on Ubuntu 26.04. The app is linked in an Ubuntu 22.04 container, so both need glibc 2.34 at most (findings 53 and 54) |
 | Worker resource limits | Memory cap: the Job Object refuses allocations over it | Memory cap: the worker is stopped when its footprint goes over (checked every 250 ms) | Memory cap: `RLIMIT_DATA`, which the worker sets on itself, refuses allocations over it |
-| No network use while reading | Not checked | Not checked | Checked in CI under `strace`: no IP socket while opening and rendering. First run 2026-11-06 |
+| No network use while reading | Not checked | Not checked | Checked in CI under `strace`: no IP socket while opening and rendering (first run 2026-11-06), or searching the whole document (from 2026-11-07) |
 | Worker OS sandbox | None | None | None |
 | Architectures built | x64 (arm64 not built) | arm64 (x64 not built) | x64 (arm64 not built) |
 | **Supported** | **No** | **No** | **No** |
@@ -45,7 +45,7 @@ A platform is declared supported only when PRD §6's conditions are met: a clean
 | Zoom | v1 | Prototyped | Ctrl + wheel, and Ctrl + plus or minus, from 10% to 1,600%. Performance measured at 25–800% (S1) |
 | Fit to width, fit to page, rotation | v1 | Not started | — |
 | Page navigation | v1 | Prototyped | PageDown and PageUp, Ctrl+Home and Ctrl+End, the scroll wheel |
-| Search with next, previous and match counts | v1 | Prototyped | A search bar (Ctrl+F) with next and previous, match case, whole words, and "Match N of M". Matches are highlighted, the current one with an outline. The whole document is searched from the page in view, one page per worker request, so rendering is not held up: 2,000 pages in about 5 s on a development machine. It carries on after a worker crash. Text in hidden layers is not matched. Not yet checked with a screen reader, and keyboard shortcuts are not tested automatically |
+| Search with next, previous and match counts | v1 | Prototyped | A search bar (Ctrl+F) with next and previous, match case, whole words, and "Match N of M". Matches are highlighted, the current one with an outline. The whole document is searched from the page in view, one page per worker request, so rendering is not held up: 2,000 pages in 1.8–3.4 s in the installed packages in CI, on all three OSes. It carries on after a worker crash. Text in hidden layers is not matched. Not yet checked with a screen reader, and keyboard shortcuts are not tested automatically |
 | Select and copy text | v1 | Not started | — |
 | Thumbnails, bookmarks, outline, attachments panel | v1 | Not started | The engine counts attachments |
 | Document properties and metadata | v1 | Prototyped (engine only) | Read by PDFium and qpdf. No user interface |

@@ -736,10 +736,26 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
       - "Match 1 of 1." for "Page 1500 of 2000", with the view on page 1500 and the match outlined.
       - "No matches found…" for QUARTERLY with match case, then 35,160 matches without it, from the match on the page in view (26,348).
       - Next and previous step by one and cross pages. After **Close**, focus is on the reading line "Page 1500 of 2000".
+  - **CI at `42afa16`** (CI run 42435165541; Package run 42435165556): every job passed.
+    - **Tests:** all 98 ran on each OS, the 11 new ones included. 95 passed on Windows; 94 on macOS and Linux, which also skip the Windows-only print test.
+    - **Search worked in every package,** three runs each: one match, on page 2,000, drawn on a sharp page in 32–109 ms. Time to search all 2,000 pages:
+
+    | Where | Search, 2,000 pages |
+    |---|---|
+    | NativeAOT folder, in the build job: Windows / Linux / macOS | 1.9–2.0 s / 2.4 s / 4.6–5.5 s |
+    | MSIX, Windows | 2.6 s |
+    | DMG, macOS | 2.6–3.4 s |
+    | AppImage, Ubuntu 26.04 | 2.6 s |
+    | .deb: Ubuntu 22.04 / 24.04 / 26.04 | 2.9 s / 1.8–1.9 s / 2.4 s |
+    | .deb: Debian 12 / 13 | 3.0 s / 2.5 s |
+    | .deb under `strace` (network check) | 3.3 s |
+
+    - **The network check** passed with the search in the traced run: no IP socket while opening, rendering and searching.
+    - The AppImage's first launch took 3.7 s to the window, so four of its ten runs were over 3 s (finding 48).
   - **Not verified:**
     - the keyboard shortcuts, which need keystrokes sent to the desktop
     - what a real screen reader announces
-    - macOS and Linux, until CI runs the smoke test there
+    - the search bar on macOS and Linux: CI checks the search and the highlight there, not the bar
 
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:
@@ -886,6 +902,7 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
     | `3ed4dc6` (same app code) | 1,026 / 3,538 | 402–491 / 1,107–1,743 | 167–182 / 467–471 | 296–332 / 627–749 |
     | `3d36614` (same app code) | 1,442 / 3,754 | 271–275 / 656–764 | 234–332 / 671–760 | 394–607 / 912–1,141 |
     | `2a4214d` (same app code) | 990 / 4,070 | 348–424 / 1,019–1,097 | 434–687 / 1,277–1,440 | 1,778–1,891 / 3,340–4,131 |
+    | `42afa16` (search added) | 999 / 3,624 | 387–884 / 795–2,418 | 459–584 / 1,287–1,334 | 732–970 / 2,013–2,258 |
 
     - **On the other OSes, nothing moved.** At `70680f1`, the NativeAOT folder's warm launches reached the first page in 191–211 ms on Windows and 138–144 ms on Linux, against 196–199 ms and 184–185 ms in S6.
     - **Evidence against a cause in this push:**
