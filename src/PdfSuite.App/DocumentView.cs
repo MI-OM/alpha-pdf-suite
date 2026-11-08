@@ -231,7 +231,8 @@ internal sealed class DocumentView : Control
     {
         if (_pageTops.Length > 0)
         {
-            ScrollTo(new Vector(_offset.X, _pageTops[Math.Clamp(pageIndex, 0, _pageTops.Length - 1)] - PageGap));
+            int page = Math.Clamp(pageIndex, 0, _pageTops.Length - 1);
+            ScrollTo(new Vector(HorizontalOffsetFor(page), _pageTops[page] - PageGap));
         }
     }
 
@@ -251,6 +252,32 @@ internal sealed class DocumentView : Control
         }
 
         InvalidateVisual();
+    }
+
+    /// <summary>Goes to a page, with a point on it (points from its top) near the top of the view if given.</summary>
+    public void ShowPagePoint(int page, double? top)
+    {
+        if (_session is null || page < 0 || page >= _pageTops.Length)
+        {
+            return;
+        }
+
+        double offset = top is double y ? (y * DipsPerPoint * _zoom) - PageGap : -PageGap;
+        ScrollTo(new Vector(HorizontalOffsetFor(page), _pageTops[page] + offset));
+    }
+
+    // Pages are centred across the widest page. When the view is narrower than that, a page that fits
+    // is centred in the view, and a wider one starts at the view's left edge, where its text starts.
+    private double HorizontalOffsetFor(int page)
+    {
+        if (_extentWidth <= Bounds.Width)
+        {
+            return _offset.X;
+        }
+
+        double width = _session!.PageSizes[page].Width * DipsPerPoint * _zoom;
+        double pageLeft = (_extentWidth - width) / 2;
+        return width <= Bounds.Width ? pageLeft - ((Bounds.Width - width) / 2) : pageLeft - PageGap;
     }
 
     /// <summary>Makes a match the current one and scrolls it into view.</summary>

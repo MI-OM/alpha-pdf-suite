@@ -832,6 +832,25 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
 - **They now use the platform's command key:** Cmd on macOS, Ctrl elsewhere. That covers the window's shortcuts, the view's keys and Ctrl + wheel zoom, the context menu's gestures, and the tooltips, which read "⌘W" on macOS.
 - **Not verified on macOS:** nothing here sends keys, and CI does not test shortcuts. On Windows nothing changes, as the command key is Ctrl.
 
+### Document outline (Milestone 2, 2026-11-07)
+- **The engine reads the outline** (bookmarks) with each entry's page and point on the page, and the worker serves it (`GetOutline`).
+  - Only destinations in this document count, direct or through a go-to action. Links to websites or other files are listed without a target and never followed (copy rules §12).
+  - **A damaged or hostile outline cannot hang the reader.** Reading stops at an entry seen before, after 32 levels, or after 10,000 entries.
+- **A sidebar** (the **Outline** button, "Show or hide the document sidebar") lists the outline. Choosing an entry, by click or with the arrow keys, goes to its page and position. Its wording is proposed in the copy rules (§5c).
+- **Going to a page now also places it sideways.** When the view is narrower than the document's widest page, a page that fits is centred, and a wider one starts at the view's left edge. Before, going to a portrait page next to landscape ones left it shifted and cut off.
+- **Evidence (Windows):**
+  - **4 tests:**
+    - the canary fixture's bookmark, the same through the worker
+    - a nested outline with a positioned destination and a website link
+    - no outline
+    - two looping outlines, an entry that is its own sibling and one that is its own child, read once each. **With the visited-entry check removed, the loop test failed:** the self-child loop was followed 32 levels deep, until the depth limit stopped it.
+  - **Through UI Automation:**
+    - The entries' accessible names were their titles.
+    - Part B went to page 41, and the second-level entry to page 25's lower half.
+    - The website entry left the page as it was, and a document without an outline said so.
+    - Two bugs were found this way and fixed: the entries first had no accessible names, and their titles were drawn in no colour.
+- **Finding 55** below: Avalonia's tree items do not offer UI Automation's expand and collapse pattern. The top level is expanded by default.
+
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:
   - **The content-stream lexer:** 20,000 random inputs, biased towards its special characters. It never throws, and never returns more bytes than it was given.
@@ -1027,4 +1046,9 @@ The CI workflow (run 42204462513) and the Package workflow (run 42204462613) pas
     - **Nothing caught it.** The install job ran in an Ubuntu 24.04 container. The AppImage ran on Ubuntu 26.04, but it declares no dependencies.
     - **The fix:** `libicu78` is now accepted. The NativeAOT app already runs with ICU 78: the packaging job's smoke tests run on the Ubuntu 26.04 runner.
     - **Keeping it fixed:** a hand-written ICU list goes stale with each release. So the install jobs now cover every release whose ICU the package accepts, and a comment in `package-linux.ps1` ties the two lists together.
+55. **Avalonia's tree items do not offer UI Automation's expand and collapse pattern** (Avalonia 12.1.4, Windows).
+    - Asking an outline entry for it fails with "Unsupported Pattern".
+    - So assistive technology cannot expand an entry or learn whether it is expanded through the pattern. Keyboard users can still expand with the arrow keys; not checked with a screen reader.
+    - **Mitigation:** the outline's top level is expanded by default, so second-level entries are reachable at once.
+    - **To do:** report it upstream, and check NVDA's behaviour with the outline in the S2 screen-reader session.
 

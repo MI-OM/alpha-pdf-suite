@@ -742,6 +742,90 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
         }
     }
 
+    public IReadOnlyList<OutlineItem> GetOutline()
+    {
+        lock (PdfiumLibrary.Sync)
+        {
+            ThrowIfDisposed();
+            int budget = OutlineItem.MaxItems;
+            return OutlineChildren(0, 0, ref budget, []);
+        }
+    }
+
+    private List<OutlineItem> OutlineChildren(nint parent, int depth, ref int budget, HashSet<nint> visited)
+    {
+        var items = new List<OutlineItem>();
+        if (depth >= OutlineItem.MaxDepth)
+        {
+            return items;
+        }
+
+        for (nint bookmark = PdfiumNative.FPDFBookmark_GetFirstChild(_document, parent);
+             bookmark != 0 && budget > 0 && visited.Add(bookmark);
+             bookmark = PdfiumNative.FPDFBookmark_GetNextSibling(_document, bookmark))
+        {
+            budget--;
+            var (page, top) = BookmarkTarget(bookmark);
+            items.Add(new OutlineItem(BookmarkTitle(bookmark), page, top, OutlineChildren(bookmark, depth + 1, ref budget, visited)));
+        }
+
+        return items;
+    }
+
+    private static string BookmarkTitle(nint bookmark)
+    {
+        int needed = (int)Math.Min(PdfiumNative.FPDFBookmark_GetTitle(bookmark, null, new CULong(0)).Value, 64 * 1024);
+        if (needed <= 2)
+        {
+            return string.Empty;
+        }
+
+        var buffer = new char[needed / 2];
+        fixed (char* p = buffer)
+        {
+            PdfiumNative.FPDFBookmark_GetTitle(bookmark, p, new CULong((uint)needed));
+        }
+
+        return new string(buffer, 0, buffer.Length - 1).Trim();
+    }
+
+    // Only destinations in this document: a direct one, or a go-to action's. Any other action, such
+    // as a link to a website, has no target here.
+    private (int? Page, double? Top) BookmarkTarget(nint bookmark)
+    {
+        nint destination = PdfiumNative.FPDFBookmark_GetDest(_document, bookmark);
+        if (destination == 0)
+        {
+            nint action = PdfiumNative.FPDFBookmark_GetAction(bookmark);
+            if (action != 0 && PdfiumNative.FPDFAction_GetType(action).Value == PdfiumNative.PDFACTION_GOTO)
+            {
+                destination = PdfiumNative.FPDFAction_GetDest(_document, action);
+            }
+        }
+
+        if (destination == 0)
+        {
+            return (null, null);
+        }
+
+        int page = PdfiumNative.FPDFDest_GetDestPageIndex(_document, destination);
+        if (page < 0 || page >= PdfiumNative.FPDF_GetPageCount(_document))
+        {
+            return (null, null);
+        }
+
+        int hasX, hasY, hasZoom;
+        float x, y, zoom;
+        double? top = null;
+        if (PdfiumNative.FPDFDest_GetLocationInPage(destination, &hasX, &hasY, &hasZoom, &x, &y, &zoom) != 0 && hasY != 0)
+        {
+            double height = GetPageSize(page).Height;
+            top = Math.Clamp(height - y, 0, height);
+        }
+
+        return (page, top);
+    }
+
     public int AttachmentCount
     {
         get

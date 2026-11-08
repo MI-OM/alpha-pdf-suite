@@ -21,6 +21,7 @@ internal sealed class MainWindow : Window
     private readonly TextBlock _status;
     private readonly SearchPanel _searchPanel;
     private readonly NavigationBar _navigation;
+    private readonly OutlinePanel _outline;
     private string _documentName = string.Empty;
     private long _documentSize;
     private string? _message;
@@ -51,6 +52,8 @@ internal sealed class MainWindow : Window
         var search = new Button { Content = "Search", Margin = new Thickness(8, 0, 0, 0) };
         ToolTip.SetTip(search, "Search this document");
         search.Click += (_, _) => OpenSearch();
+        var sidebar = new Button { Content = "Outline", Margin = new Thickness(8, 0, 0, 0) };
+        ToolTip.SetTip(sidebar, "Show or hide the document sidebar");
         var properties = new Button { Content = "Document Properties", Margin = new Thickness(8, 0, 0, 0) };
         ToolTip.SetTip(properties, "Show this document's properties");
         properties.Click += async (_, _) => await ShowPropertiesAsync();
@@ -62,14 +65,19 @@ internal sealed class MainWindow : Window
         DockPanel.SetDock(print, Dock.Left);
         DockPanel.SetDock(search, Dock.Left);
         DockPanel.SetDock(properties, Dock.Left);
+        DockPanel.SetDock(sidebar, Dock.Left);
         bar.Children.Add(open);
         bar.Children.Add(close);
         bar.Children.Add(print);
         bar.Children.Add(search);
         bar.Children.Add(properties);
+        bar.Children.Add(sidebar);
         bar.Children.Add(_status);
 
         _navigation = new NavigationBar(_view);
+        _outline = new OutlinePanel { IsVisible = false };
+        _outline.EntryChosen += (page, top) => _view.ShowPagePoint(page, top);
+        sidebar.Click += (_, _) => _outline.IsVisible = !_outline.IsVisible;
         _view.CopyRequested += () => _ = CopyAsync();
         var copyItem = new MenuItem { Header = "Copy", InputGesture = Shortcuts.Gesture(Avalonia.Input.Key.C) };
         copyItem.Click += async (_, _) => await CopyAsync();
@@ -89,6 +97,8 @@ internal sealed class MainWindow : Window
         root.Children.Add(bar);
         root.Children.Add(_navigation);
         root.Children.Add(_searchPanel);
+        DockPanel.SetDock(_outline, Dock.Left);
+        root.Children.Add(_outline);
         root.Children.Add(_view);
         Content = root;
 
@@ -207,6 +217,7 @@ internal sealed class MainWindow : Window
             ClearSearch();
             _searchPanel.Status = string.Empty;
             _view.SetDocument(session);
+            _ = LoadOutlineAsync(session);
             previous?.Dispose();
             _documentName = name;
             _documentSize = data.LongLength;
@@ -271,6 +282,26 @@ internal sealed class MainWindow : Window
         }
     }
 
+    /// <summary>Loads a document's outline into the sidebar. A document whose outline cannot be read shows as having none.</summary>
+    private async Task LoadOutlineAsync(DocumentSession session)
+    {
+        _outline.Show(null);
+        IReadOnlyList<OutlineItem> outline;
+        try
+        {
+            outline = await session.GetOutlineAsync();
+        }
+        catch (Exception ex) when (ex is WorkerException or WorkerExitedException or InvalidDataException)
+        {
+            outline = [];
+        }
+
+        if (session == _view.Session)
+        {
+            _outline.Show(outline);
+        }
+    }
+
     /// <summary>
     /// Closes the document: its search, selection and worker go with it. Nothing is saved or changed,
     /// as the viewer never writes to the file it opened.
@@ -285,6 +316,7 @@ internal sealed class MainWindow : Window
         ClearSearch();
         _searchPanel.Status = string.Empty;
         _view.SetDocument(null);
+        _outline.Show(null);
         session.Dispose();
         _documentName = string.Empty;
         _documentSize = 0;

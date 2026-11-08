@@ -48,6 +48,13 @@ public interface IPdfDocument : IDisposable
 
     /// <summary>The page's visible characters and their boxes, for text selection; see <see cref="PageCharacters"/>.</summary>
     PageCharacters GetCharacters(int pageIndex);
+
+    /// <summary>
+    /// The document's outline, read within <see cref="OutlineItem.MaxItems"/> and
+    /// <see cref="OutlineItem.MaxDepth"/>, and stopping at any entry seen before, so a damaged or
+    /// hostile outline that loops cannot hang the reader.
+    /// </summary>
+    IReadOnlyList<OutlineItem> GetOutline();
 }
 
 /// <summary>Page width and height in PDF points (1/72 inch), as reported by the engine.</summary>

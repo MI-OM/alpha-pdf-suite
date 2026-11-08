@@ -111,6 +111,9 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
                 case MessageKind.GetCharacters:
                     GetCharacters(request);
                     break;
+                case MessageKind.GetOutline:
+                    GetOutline(request);
+                    break;
                 case MessageKind.Print:
                     Print(request);
                     break;
@@ -298,6 +301,36 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
         }
 
         MessageIO.Write(output, MessageKind.TextMatches, request.RequestId, payload);
+    }
+
+    // Payload: [docId]. Response: [int32 n] then n entries in document order, each
+    // [int32 depth][title][int32 page, -1 for none][double top, NaN for none].
+    private void GetOutline(in Message request)
+    {
+        var reader = new PayloadReader(request.Payload);
+        var flat = new List<(int Depth, OutlineItem Item)>();
+        void Flatten(IReadOnlyList<OutlineItem> items, int depth)
+        {
+            foreach (OutlineItem item in items)
+            {
+                flat.Add((depth, item));
+                Flatten(item.Children, depth + 1);
+            }
+        }
+
+        Flatten(_documents[reader.ReadInt32()].GetOutline(), 0);
+        byte[] payload = new byte[4 + flat.Sum(f => 16 + PayloadWriter.SizeOf(f.Item.Title))];
+        var writer = new PayloadWriter(payload);
+        writer.WriteInt32(flat.Count);
+        foreach (var (depth, item) in flat)
+        {
+            writer.WriteInt32(depth);
+            writer.WriteString(item.Title);
+            writer.WriteInt32(item.PageIndex ?? -1);
+            writer.WriteDouble(item.Top ?? double.NaN);
+        }
+
+        MessageIO.Write(output, MessageKind.Outline, request.RequestId, payload);
     }
 
     // Payload: [docId][page]. Response: [text][int32 n] then n x [4 x double box].

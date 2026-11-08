@@ -61,6 +61,36 @@ internal static unsafe partial class PdfiumNative
     [LibraryImport(Library)]
     internal static partial int FPDF_GetSecurityHandlerRevision(nint document);
 
+    // fpdf_doc.h: the outline (bookmarks) and destinations. Bookmark titles are UTF-16LE with a terminator.
+    internal const uint PDFACTION_GOTO = 1;
+
+    [LibraryImport(Library)]
+    internal static partial nint FPDFBookmark_GetFirstChild(nint document, nint bookmark);
+
+    [LibraryImport(Library)]
+    internal static partial nint FPDFBookmark_GetNextSibling(nint document, nint bookmark);
+
+    [LibraryImport(Library)]
+    internal static partial CULong FPDFBookmark_GetTitle(nint bookmark, void* buffer, CULong bufferLength);
+
+    [LibraryImport(Library)]
+    internal static partial nint FPDFBookmark_GetDest(nint document, nint bookmark);
+
+    [LibraryImport(Library)]
+    internal static partial nint FPDFBookmark_GetAction(nint bookmark);
+
+    [LibraryImport(Library)]
+    internal static partial CULong FPDFAction_GetType(nint action);
+
+    [LibraryImport(Library)]
+    internal static partial nint FPDFAction_GetDest(nint document, nint action);
+
+    [LibraryImport(Library)]
+    internal static partial int FPDFDest_GetDestPageIndex(nint document, nint destination);
+
+    [LibraryImport(Library)]
+    internal static partial int FPDFDest_GetLocationInPage(nint destination, int* hasX, int* hasY, int* hasZoom, float* x, float* y, float* zoom);
+
     // fpdf_catalog.h
     [LibraryImport(Library)]
     internal static partial int FPDFCatalog_IsTagged(nint document);

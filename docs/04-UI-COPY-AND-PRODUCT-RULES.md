@@ -202,6 +202,16 @@ Do not promise OCR will always recognize every word correctly. Show the search l
 - Select text to copy it.
 - We couldn't copy the text.
 
+## 5c. Document outline (proposed 2026-11-07, for review)
+
+**Toolbar button:** Outline, with the tooltip "Show or hide the document sidebar" (§4)
+
+**Heading:** Document outline
+
+**No outline:** This document has no outline.
+
+**An entry that goes nowhere in this document,** such as a link to a website: its title, then "(not a page in this document)". Choosing it does nothing; external links need the confirmation in §12.
+
 ## 6. Password-protected document
 
 **Heading:** This document is password-protected

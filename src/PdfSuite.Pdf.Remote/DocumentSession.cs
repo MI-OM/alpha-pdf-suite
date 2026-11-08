@@ -116,6 +116,12 @@ public sealed class DocumentSession : IDisposable
         }
     }
 
+    public async Task<IReadOnlyList<OutlineItem>> GetOutlineAsync(CancellationToken cancellationToken = default)
+    {
+        var (client, documentId, _) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
+        return await client.GetOutlineAsync(documentId, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<PageCharacters> GetCharactersAsync(int pageIndex, CancellationToken cancellationToken = default)
     {
         var (client, documentId, _) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);

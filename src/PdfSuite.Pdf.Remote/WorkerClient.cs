@@ -335,6 +335,56 @@ public sealed class WorkerClient : IDisposable
         return new DocumentInfo(metadata, version, Encrypted: (flags & 1) != 0, permissions, Tagged: (flags & 2) != 0);
     }
 
+    /// <summary>The document's outline; see <see cref="IPdfDocument.GetOutline"/>.</summary>
+    public async Task<IReadOnlyList<OutlineItem>> GetOutlineAsync(int documentId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        int id = NextRequestId();
+        Pending pending = Register(id);
+        byte[] payload = new byte[4];
+        new PayloadWriter(payload).WriteInt32(documentId);
+        Send(MessageKind.GetOutline, id, payload);
+
+        Message response;
+        using (cancellationToken.Register(() => CancelRequest(id)))
+        {
+            response = await pending.Completion.Task.ConfigureAwait(false);
+        }
+
+        using var owned = response;
+        ThrowIfError(response);
+        Expect(response, MessageKind.Outline);
+
+        // Rebuild the tree from the entries' depths, in document order.
+        var reader = new PayloadReader(response.Payload);
+        var roots = new List<OutlineItem>();
+        var open = new List<List<OutlineItem>> { roots };
+        int count = reader.ReadInt32();
+        if (count is < 0 or > OutlineItem.MaxItems)
+        {
+            throw new InvalidDataException("The worker sent an outline of an impossible size.");
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            int depth = reader.ReadInt32();
+            string title = reader.ReadString() ?? string.Empty;
+            int page = reader.ReadInt32();
+            double top = reader.ReadDouble();
+            if (depth < 0 || depth >= open.Count)
+            {
+                throw new InvalidDataException("The worker sent an outline entry out of order.");
+            }
+
+            var children = new List<OutlineItem>();
+            open[depth].Add(new OutlineItem(title, page >= 0 ? page : null, double.IsNaN(top) ? null : top, children));
+            open.RemoveRange(depth + 1, open.Count - depth - 1);
+            open.Add(children);
+        }
+
+        return roots;
+    }
+
     /// <summary>A page's visible characters and their boxes; see <see cref="IPdfDocument.GetCharacters"/>.</summary>
     public async Task<PageCharacters> GetCharactersAsync(int documentId, int pageIndex, CancellationToken cancellationToken = default)
     {
