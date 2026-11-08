@@ -827,6 +827,11 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
   - the document's bytes hash the same as before
 - **Through UI Automation:** after Close Document the status reads "No document open.", the document's worker process has gone, and the page and zoom controls are disabled.
 
+### Platform command key (2026-11-07)
+- **Shortcuts used Ctrl on every OS,** where macOS users expect Cmd (Cmd+C, Cmd+F and so on). PRD §6 asks for platform-appropriate keyboard conventions before a platform is supported.
+- **They now use the platform's command key:** Cmd on macOS, Ctrl elsewhere. That covers the window's shortcuts, the view's keys and Ctrl + wheel zoom, the context menu's gestures, and the tooltips, which read "⌘W" on macOS.
+- **Not verified on macOS:** nothing here sends keys, and CI does not test shortcuts. On Windows nothing changes, as the command key is Ctrl.
+
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:
   - **The content-stream lexer:** 20,000 random inputs, biased towards its special characters. It never throws, and never returns more bytes than it was given.

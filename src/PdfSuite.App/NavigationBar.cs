@@ -38,9 +38,9 @@ internal sealed class NavigationBar : DockPanel
 
         Button zoomOut = Button("−", "Zoom out", "Zoom out", () => _view.SetZoom(_view.Zoom * 0.8), 16);
         Button zoomIn = Button("+", "Zoom in", "Zoom in", () => _view.SetZoom(_view.Zoom * 1.25));
-        Button fitWidth = Button("Fit Width", "Fit the page to the window's width (Ctrl+2)", "Fit Width", _view.FitWidth, 8);
-        Button fitPage = Button("Fit Page", "Fit the whole page in the window (Ctrl+0)", "Fit Page", _view.FitPage);
-        Button actualSize = Button("Actual Size", "Show the page at its actual size (Ctrl+1)", "Actual Size", () => _view.SetZoom(1));
+        Button fitWidth = Button("Fit Width", $"Fit the page to the window's width ({Shortcuts.Label("2")})", "Fit Width", _view.FitWidth, 8);
+        Button fitPage = Button("Fit Page", $"Fit the whole page in the window ({Shortcuts.Label("0")})", "Fit Page", _view.FitPage);
+        Button actualSize = Button("Actual Size", $"Show the page at its actual size ({Shortcuts.Label("1")})", "Actual Size", () => _view.SetZoom(1));
 
         _documentControls = [_previous, _page, _next, zoomOut, zoomIn, fitWidth, fitPage, actualSize];
         foreach (Control control in new Control[] { _previous, _page, _total, _next, zoomOut, zoomIn, fitWidth, fitPage, actualSize })

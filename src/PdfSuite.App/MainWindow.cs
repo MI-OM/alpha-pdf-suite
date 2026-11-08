@@ -43,7 +43,7 @@ internal sealed class MainWindow : Window
         var open = new Button { Content = "Open PDF…" };
         open.Click += async (_, _) => await PickAndOpenAsync();
         var close = new Button { Content = "Close Document", Margin = new Thickness(8, 0, 0, 0) };
-        ToolTip.SetTip(close, "Close this document (Ctrl+W)");
+        ToolTip.SetTip(close, $"Close this document ({Shortcuts.Label("W")})");
         close.Click += (_, _) => CloseDocument();
         var print = new Button { Content = "Print…", Margin = new Thickness(8, 0, 0, 0) };
         ToolTip.SetTip(print, "Print this document");
@@ -71,9 +71,9 @@ internal sealed class MainWindow : Window
 
         _navigation = new NavigationBar(_view);
         _view.CopyRequested += () => _ = CopyAsync();
-        var copyItem = new MenuItem { Header = "Copy", InputGesture = new Avalonia.Input.KeyGesture(Avalonia.Input.Key.C, Avalonia.Input.KeyModifiers.Control) };
+        var copyItem = new MenuItem { Header = "Copy", InputGesture = Shortcuts.Gesture(Avalonia.Input.Key.C) };
         copyItem.Click += async (_, _) => await CopyAsync();
-        var selectAllItem = new MenuItem { Header = "Select All", InputGesture = new Avalonia.Input.KeyGesture(Avalonia.Input.Key.A, Avalonia.Input.KeyModifiers.Control) };
+        var selectAllItem = new MenuItem { Header = "Select All", InputGesture = Shortcuts.Gesture(Avalonia.Input.Key.A) };
         selectAllItem.Click += async (_, _) => await _view.SelectAllOnPageAsync();
         _view.ContextMenu = new ContextMenu { ItemsSource = new[] { copyItem, selectAllItem } };
         _searchPanel = new SearchPanel { IsVisible = false };
@@ -239,23 +239,23 @@ internal sealed class MainWindow : Window
         var modifiers = e.KeyModifiers;
         switch (e.Key)
         {
-            case Avalonia.Input.Key.P when modifiers == Avalonia.Input.KeyModifiers.Control:
+            case Avalonia.Input.Key.P when modifiers == Shortcuts.Command:
                 e.Handled = true;
                 _ = PrintAsync();
                 break;
-            case Avalonia.Input.Key.F when modifiers == Avalonia.Input.KeyModifiers.Control:
+            case Avalonia.Input.Key.F when modifiers == Shortcuts.Command:
                 e.Handled = true;
                 OpenSearch();
                 break;
-            case Avalonia.Input.Key.W when modifiers == Avalonia.Input.KeyModifiers.Control:
+            case Avalonia.Input.Key.W when modifiers == Shortcuts.Command:
                 e.Handled = true;
                 CloseDocument();
                 break;
-            case Avalonia.Input.Key.G when modifiers == Avalonia.Input.KeyModifiers.Control:
+            case Avalonia.Input.Key.G when modifiers == Shortcuts.Command:
                 e.Handled = true;
                 _navigation.FocusPageNumber();
                 break;
-            case Avalonia.Input.Key.D when modifiers == Avalonia.Input.KeyModifiers.Control:
+            case Avalonia.Input.Key.D when modifiers == Shortcuts.Command:
                 e.Handled = true;
                 _ = ShowPropertiesAsync();
                 break;

@@ -121,7 +121,7 @@ internal sealed class DocumentView : Control
     /// <summary>Raised on the UI thread when what the status bar shows may have changed.</summary>
     public event Action? StatusChanged;
 
-    /// <summary>Raised when the reader asks to copy (Ctrl+C). The window decides, as copying depends on the document's permissions.</summary>
+    /// <summary>Raised when the reader asks to copy (Ctrl+C, or Cmd+C on macOS). The window decides, as copying depends on the document's permissions.</summary>
     public event Action? CopyRequested;
 
     public int CurrentPage
@@ -738,7 +738,7 @@ internal sealed class DocumentView : Control
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
-        if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        if (e.KeyModifiers.HasFlag(Shortcuts.Command))
         {
             SetZoom(_zoom * (e.Delta.Y > 0 ? 1.25 : 0.8));
         }
@@ -759,7 +759,7 @@ internal sealed class DocumentView : Control
             return;
         }
 
-        bool control = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+        bool control = e.KeyModifiers.HasFlag(Shortcuts.Command);
         int readingPage = CurrentReadingPosition()?.Page ?? CurrentPage;
         e.Handled = true;
         switch (e.Key)
