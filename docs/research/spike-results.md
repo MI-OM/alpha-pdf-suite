@@ -757,6 +757,16 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
     - what a real screen reader announces
     - the search bar on macOS and Linux: CI checks the search and the highlight there, not the bar
 
+### Password prompt (Milestone 1, 2026-11-07)
+- **The viewer asks for a password** when the worker reports one is needed, with the copy rules' dialog (§6): heading, body, a Password field, **Unlock PDF** and **Cancel**.
+  - A wrong password keeps the dialog open with "The password could not unlock this document. Check the password and try again.", announced at once to screen readers.
+  - Cancel leaves whatever document was open before.
+  - Any other failure closes the dialog and gets the usual "We couldn't open this PDF…" message.
+- **The password** is held only by the session, in memory, so a restarted worker can reopen the document. It is never logged, saved or sent (decisions for review, D2).
+- **Evidence (Windows):**
+  - 2 tests: a session refuses no password and a wrong one, and opens with the right one; and it reopens a protected document after the worker is killed.
+  - Through UI Automation, on an AES-256 file: the dialog appeared; a wrong password kept it open with the message; the right one opened the document on page 1 of 3; Cancel, in a second launch, left "No document open."
+
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:
   - **The content-stream lexer:** 20,000 random inputs, biased towards its special characters. It never throws, and never returns more bytes than it was given.

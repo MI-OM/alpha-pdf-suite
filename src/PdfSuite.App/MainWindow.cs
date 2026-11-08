@@ -164,7 +164,23 @@ internal sealed class MainWindow : Window
         ShowMessage($"Opening {name}…");
         try
         {
-            DocumentSession session = await DocumentSession.OpenAsync(StartWorker, data, password: null);
+            DocumentSession session;
+            try
+            {
+                session = await DocumentSession.OpenAsync(StartWorker, data, password: null);
+            }
+            catch (PdfOpenException ex) when (ex.Error == PdfOpenError.Password)
+            {
+                if (await AskPasswordAsync(data, name) is not DocumentSession unlocked)
+                {
+                    // Cancelled: whatever was open before stays open.
+                    ShowMessage(null);
+                    return false;
+                }
+
+                session = unlocked;
+            }
+
             DocumentSession? previous = _view.Session;
             ClearSearch();
             _searchPanel.Status = string.Empty;
@@ -175,10 +191,6 @@ internal sealed class MainWindow : Window
             ShowMessage(null);
             _view.Focus();
             return true;
-        }
-        catch (PdfOpenException ex) when (ex.Error == PdfOpenError.Password)
-        {
-            ShowMessage("This document is password-protected. Password entry is not part of this spike build.");
         }
         catch (Exception ex) when (ex is PdfOpenException or WorkerException)
         {
@@ -432,6 +444,39 @@ internal sealed class MainWindow : Window
         {
             ShowMessage("We couldn't print the document. Check the printer, then try again.");
         }
+    }
+
+    /// <summary>
+    /// Shows the password dialog until the document opens or the user cancels. Returns the open
+    /// session, or null if cancelled. Any failure other than a wrong password closes the dialog and
+    /// is rethrown here, for the caller's usual messages.
+    /// </summary>
+    private async Task<DocumentSession?> AskPasswordAsync(byte[] data, string name)
+    {
+        DocumentSession? opened = null;
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo? failure = null;
+        var dialog = new PasswordDialog(name, async password =>
+        {
+            try
+            {
+                opened = await DocumentSession.OpenAsync(StartWorker, data, password);
+                return true;
+            }
+            catch (PdfOpenException ex) when (ex.Error == PdfOpenError.Password)
+            {
+                return false;
+            }
+            catch (Exception ex) when (ex is PdfOpenException or WorkerException or WorkerExitedException or Win32Exception or InvalidOperationException)
+            {
+                failure = System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex);
+                return true;
+            }
+        });
+
+        ShowMessage($"{name} is password-protected.");
+        await dialog.ShowDialog<bool>(this);
+        failure?.Throw();
+        return opened;
     }
 
     private static WorkerClient StartWorker() =>

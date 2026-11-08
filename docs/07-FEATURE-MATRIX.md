@@ -52,7 +52,7 @@ A platform is declared supported only when PRD §6's conditions are met: a clean
 | Print preview | v1 | Not started | The Windows 11 dialog says "This app doesn't support print preview" (spike finding 22) |
 | Printing | v1 | Prototyped (Windows) | Text prints as outlines, at about 1 s per page (finding 21) |
 | Recently opened files | v1 | Not started | — |
-| Password-protected documents | v1 | Prototyped (engine only) | The worker and engine open with a password. The viewer has no password prompt and says so |
+| Password-protected documents | v1 | Prototyped | A password prompt (copy rules §6) that stays open after a wrong password and says so. The password is kept in memory only while the document is open, so a restarted worker can reopen it; it is never logged or saved (decisions for review, D2) |
 | Clear error messages | v1 | Prototyped | Messages for unreadable files and worker restarts, from the UI copy rules |
 
 ## 4.2 Annotation and review
@@ -114,7 +114,7 @@ A platform is declared supported only when PRD §6's conditions are met: a clean
 
 | Capability | Release | Status | Notes |
 |---|---|---|---|
-| Open password-protected PDFs | v1 | Prototyped (engine only) | See 4.1 |
+| Open password-protected PDFs | v1 | Prototyped | See 4.1 |
 | AES-256 encryption and permissions | v1 | Prototyped (no user interface) | Through qpdf, in the worker. Verified on all three OSes, with PDFium refusing wrong passwords (S4) |
 | Metadata sanitisation workflow | v1 | Not started | The redaction scrub removes document-level metadata (S5) |
 | Redaction (rasterise, rewrite, scrub, verify) | v1 | Prototyped (no user interface) | Every canary removed; every negative control rejected; all three OSes (S5; ADR-0006). Runs in the worker |
