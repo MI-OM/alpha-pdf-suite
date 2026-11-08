@@ -5,6 +5,36 @@
 
 **Not legal advice.** Each decision notes the rules it was checked against. That is a careful reading of well-known requirements, not a legal opinion. Anything with legal weight should be confirmed by a qualified reviewer before release.
 
+## What was built on 2026-11-07, for review
+
+Eight local commits, none pushed (`git log origin/main..HEAD`). Each is one feature, with its tests and records. The details are in the spike results, "After the spike".
+
+| Commit | Feature | Checked by |
+|---|---|---|
+| `0e8c296` | Password prompt, and this log | 2 tests; UI Automation |
+| `049aff3` | Document Properties (Ctrl+D) | 17 tests; UI Automation |
+| `ff80535` | Page navigation, Fit Width, Fit Page and Actual Size | UI Automation |
+| `fbaa569` | Text selection and copy, honouring copy permissions | 7 tests; posted mouse messages; smoke test |
+| `4874a20` | Close Document, and the open-close-reopen gate | 1 test; UI Automation |
+| `99665d0` | Cmd for shortcuts on macOS | Not verifiable here |
+| `f338569` | Document outline sidebar, safe against looping outlines | 4 tests; UI Automation |
+| `623ce3c` | Recent documents, stored locally, clearable | UI Automation |
+
+- **On Windows:**
+  - All 129 tests ran: 126 passed, and the 3 explicit probes were skipped.
+  - A local NativeAOT publish built with no warnings, passed the smoke test, and passed every UI check above.
+- **Bugs found and fixed while checking:**
+  - copied text lost from the clipboard when the app closed
+  - fitted and navigated-to pages shown shifted next to wider pages
+  - outline entries without accessible names, and drawn in no colour
+  - two Avalonia menu flyout behaviours
+- **New finding 55:** Avalonia's tree items lack UI Automation's expand and collapse pattern.
+- **Not verified:**
+  - macOS and Linux, because nothing has been pushed for CI to run
+  - keyboard shortcuts, as no keystrokes were sent to the desktop
+  - real screen readers
+- **To push:** this machine's active GitHub account is `ININ-Org`, which cannot push to the repository. Push as `MI-OM`, or switch the default account first.
+
 ## Decided (provisional)
 
 | # | Decision | Why | Rules checked |
