@@ -711,7 +711,35 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
   - The case and whole-word options.
   - The worker returns exactly the engine's matches and rectangles.
   - A hidden-layer canary is not found through the worker, but is found by the engine on its own, as a negative control.
-- **Not built:** the search user interface, and searching a whole document as one request.
+- **Not built at first:** the search user interface, and searching a whole document as one request.
+- **Added 2026-11-07: whole-document search and the search bar.**
+  - **`DocumentSearch`** (in `PdfSuite.Pdf.Remote`, so it is tested without the UI) searches every page for one query, a page per worker request, starting at the page in view and wrapping round.
+    - Next and previous move through matches in document order, wrapping at either end. A move that needs a page not searched yet has that page searched next.
+    - A match's position ("3 of 12") is given once every page before it has been searched.
+    - A page the engine cannot read counts as having no matches and is reported. A page that stops the worker twice ends the search, keeping what it found.
+  - **The session asks again after a crash.** `DocumentSession.FindTextAsync` waits for the session to restart a worker that stopped mid-request, then asks the new one once.
+    - Asking at once would fail: the client fails its requests up to 2 s before it raises `Exited`, so the session has not yet replaced the dead worker.
+  - **The search bar** (`SearchPanel`), from the copy rules (§5): Ctrl+F or **Search** opens it. Enter or F3 finds the next match, Shift+Enter or Shift+F3 the previous one, and Escape or **Close** closes it.
+    - Match case and whole words. Changing either searches again; typing a new query clears the old highlights.
+    - Matches on visible pages are highlighted, and the current one also has an outline, so it does not rely on colour alone.
+    - The status line is a polite live region, so screen readers can announce counts without moving focus.
+    - Closing it moves keyboard focus to the reading line holding the current match, so reading carries on from there.
+    - The copy rules' OCR hint is not shown, because the build has no OCR (§3: only show tools in the build). Messages the copy rules did not have are proposed in §5.
+  - **The packaged smoke test searches too.** After the first page, it searches all pages for the last page's first line, moves to the match on the last page, and waits until it is drawn on a sharp page. So every package in CI checks search through its NativeAOT build. The run fails if it is not found or not shown.
+  - **Evidence (Windows):**
+    - **11 new tests,** all passing; 95 passed in all, with the 3 explicit probes skipped.
+      - Scripted pages check the search order, finding the first match before earlier pages are searched, wrapping, searching a wanted page next, cancelling, a page the engine cannot read, and the worker giving up.
+      - Through the worker: a 120-page document, against the engine's counts.
+      - A worker killed after 10 of 200 pages: the search completes with the engine's count, on a new worker. **With the session's retry removed, this test failed three times out of three**, ending as Failed instead of Complete.
+    - **The smoke test,** on the local Release build (JIT): all 2,000 pages searched in 4.5–5.4 s, about 2.5 ms a page; the match was drawn on a sharp page within 60 ms.
+    - **Driven through UI Automation** (invoke, value and toggle patterns, no keystrokes):
+      - "Match 1 of 1." for "Page 1500 of 2000", with the view on page 1500 and the match outlined.
+      - "No matches found…" for QUARTERLY with match case, then 35,160 matches without it, from the match on the page in view (26,348).
+      - Next and previous step by one and cross pages. After **Close**, focus is on the reading line "Page 1500 of 2000".
+  - **Not verified:**
+    - the keyboard shortcuts, which need keystrokes sent to the desktop
+    - what a real screen reader announces
+    - macOS and Linux, until CI runs the smoke test there
 
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:

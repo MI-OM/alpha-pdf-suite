@@ -28,6 +28,10 @@ public sealed class DocumentSession : IDisposable
     private WorkerClient _client;
     private RemoteDocument _remote;
     private Task _ready = Task.CompletedTask;
+
+    // Completed once the session has dealt with the current worker's exit: a restart has begun,
+    // or the session has failed. A request that saw the worker go waits for it before asking again.
+    private TaskCompletionSource _exitHandled = NewExitSignal();
     private bool _disposed;
 
     private DocumentSession(Func<WorkerClient> startWorker, byte[] data, string? password, WorkerClient client, RemoteDocument remote)
@@ -79,37 +83,56 @@ public sealed class DocumentSession : IDisposable
     public async Task<RenderedTile> RenderTileAsync(
         int pageIndex, double pixelsPerPoint, PixelRegion region, CancellationToken cancellationToken = default)
     {
-        var (client, documentId) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
+        var (client, documentId, _) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
         return await client.RenderTileAsync(documentId, pageIndex, pixelsPerPoint, region, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<TextLine>> GetTextLinesAsync(int pageIndex, CancellationToken cancellationToken = default)
     {
-        var (client, documentId) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
+        var (client, documentId, _) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
         return await client.GetTextLinesAsync(documentId, pageIndex, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Finds text on one page. If the worker stops during the request, this waits for the session
+    /// to restart it and asks once more, so a search can carry on past a crash. A page that stops
+    /// the worker twice ends in <see cref="WorkerExitedException"/>.
+    /// </summary>
     public async Task<IReadOnlyList<TextMatch>> FindTextAsync(
         int pageIndex, string query, bool matchCase = false, bool wholeWord = false, CancellationToken cancellationToken = default)
     {
-        var (client, documentId) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
-        return await client.FindTextAsync(documentId, pageIndex, query, matchCase, wholeWord, cancellationToken).ConfigureAwait(false);
+        var (client, documentId, exitHandled) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await client.FindTextAsync(documentId, pageIndex, query, matchCase, wholeWord, cancellationToken).ConfigureAwait(false);
+        }
+        catch (WorkerExitedException)
+        {
+            // The client fails its requests before it raises Exited, so the session may not know yet
+            // that the worker has gone. Asking again now would reach the same, dead worker.
+            await exitHandled.WaitAsync(cancellationToken).ConfigureAwait(false);
+            (client, documentId, _) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
+            return await client.FindTextAsync(documentId, pageIndex, query, matchCase, wholeWord, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     public async Task<string> GetQpdfVersionAsync(CancellationToken cancellationToken = default)
     {
-        var (client, _) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
+        var (client, _, _) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
         return await client.GetQpdfVersionAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<int> PrintAsync(PrintJob job, CancellationToken cancellationToken = default)
     {
-        var (client, documentId) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
+        var (client, documentId, _) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
         return await client.PrintAsync(documentId, job, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Waits out any restart, then returns the current worker and its id for the document.</summary>
-    private async Task<(WorkerClient Client, int DocumentId)> ReadyClientAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Waits out any restart, then returns the current worker, its id for the document, and a task
+    /// that completes once the session has dealt with that worker's exit.
+    /// </summary>
+    private async Task<(WorkerClient Client, int DocumentId, Task ExitHandled)> ReadyClientAsync(CancellationToken cancellationToken)
     {
         Task ready;
         lock (_gate)
@@ -127,7 +150,7 @@ public sealed class DocumentSession : IDisposable
                 throw new WorkerExitedException();
             }
 
-            return (_client, _remote.Id);
+            return (_client, _remote.Id, _exitHandled.Task);
         }
     }
 
@@ -152,6 +175,9 @@ public sealed class DocumentSession : IDisposable
 
             _disposed = true;
             client = _client;
+
+            // Requests waiting to ask again wake up, and then find the session disposed.
+            _exitHandled.TrySetResult();
         }
 
         client.Dispose();
@@ -175,6 +201,7 @@ public sealed class DocumentSession : IDisposable
             if (_recentRestarts.Count >= MaxRestarts)
             {
                 SetState(SessionState.Failed);
+                _exitHandled.TrySetResult();
                 return;
             }
 
@@ -183,6 +210,7 @@ public sealed class DocumentSession : IDisposable
 
             // Starting a process takes a moment; do it off this lock so callers are not blocked.
             _ready = Task.Run(RestartAsync);
+            _exitHandled.TrySetResult();
         }
     }
 
@@ -205,6 +233,7 @@ public sealed class DocumentSession : IDisposable
                 old = _client;
                 _client = client;
                 _remote = remote;
+                _exitHandled = NewExitSignal();
                 client.Exited += OnWorkerExited;
             }
 
@@ -223,4 +252,6 @@ public sealed class DocumentSession : IDisposable
         State = state;
         StateChanged?.Invoke(state);
     }
+
+    private static TaskCompletionSource NewExitSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 }

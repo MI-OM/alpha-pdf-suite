@@ -4,8 +4,10 @@
 
 .DESCRIPTION
   Each run opens the fixture, waits until the first page is sharp, asks the worker for qpdf's
-  version, and exits. A run passes only if the page rendered and qpdf loaded. On a fresh machine
-  the first run is a cold start. Exits with 1 if any run fails. macOS and Linux use smoke-test.sh.
+  version, searches every page for the last page's first line and shows that match, then exits.
+  A run passes only if the page rendered, qpdf loaded and the search found and showed it. On a
+  fresh machine the first run is a cold start. Exits with 1 if any run fails. macOS and Linux use
+  smoke-test.sh.
   Works in Windows PowerShell 5.1 and PowerShell 7.
 
 .EXAMPLE
@@ -45,7 +47,7 @@ foreach ($run in 1..$Runs) {
     Get-Content $out -Raw
     $result = Get-Content $out -Raw | ConvertFrom-Json
     $kind = if ($run -eq 1) { 'first run' } else { 'warm' }
-    $summary = "run $run ($kind): exit $($process.ExitCode); $($result.environment.codeGeneration); window $($result.startup.processStartToWindowMs) ms; first page sharp $($result.startup.processStartToFirstPageSharpMs) ms; qpdf $($result.qpdfVersion)"
+    $summary = "run $run ($kind): exit $($process.ExitCode); $($result.environment.codeGeneration); window $($result.startup.processStartToWindowMs) ms; first page sharp $($result.startup.processStartToFirstPageSharpMs) ms; qpdf $($result.qpdfVersion); search $($result.search)"
     if ($process.ExitCode -eq 0 -and $result.firstPageSharp -and $result.qpdfVersion) {
         Write-Notice "Smoke test ($Label)" $summary
     }

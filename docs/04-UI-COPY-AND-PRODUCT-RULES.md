@@ -168,7 +168,15 @@ Tooltips:
 
 **Search limitation:** Some scanned documents contain images instead of searchable text. Run OCR to make supported scanned pages searchable.
 
-Do not promise OCR will always recognize every word correctly.
+Do not promise OCR will always recognize every word correctly. Show the search limitation only once the build has OCR (§3, Tools).
+
+**Proposed for the Milestone 1 search bar (2026-11-07), for review:**
+- Position: Match 3 of 12.
+- While searching: Match 3 of 12 so far. Searching… (or "12 matches so far. Searching…" before the position is known)
+- No document: Open a PDF to search it.
+- Pages that failed: 2 pages could not be searched.
+- Stopped: The search stopped because the rendering process stopped. 12 matches found. Search again to retry.
+- Toolbar button: Search. Close button: Close, with the tooltip "Close the search bar".
 
 ## 6. Password-protected document
 

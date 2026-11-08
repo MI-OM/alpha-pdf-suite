@@ -1,8 +1,10 @@
 #!/bin/sh
 # Launches the app with --smoke-test several times and reports startup times (spike S6, macOS
 # and Linux). Each run opens the fixture, waits until the first page is sharp, asks the worker for
-# qpdf's version, and exits. A run passes only if the page rendered and qpdf loaded. On a fresh
-# machine the first run is a cold start. Exits with 1 if any run fails. Windows uses smoke-test.ps1.
+# qpdf's version, searches every page for the last page's first line and shows that match, then
+# exits. A run passes only if the page rendered, qpdf loaded and the search found and showed it.
+# On a fresh machine the first run is a cold start. Exits with 1 if any run fails. Windows uses
+# smoke-test.ps1.
 #
 # POSIX sh and perl only, so it also runs in a bare Debian or Ubuntu container. Linux without a
 # display runs the app under xvfb-run.
@@ -50,7 +52,7 @@ while [ "$run" -le "$runs" ]; do
         echo
         kind=warm
         [ "$run" -eq 1 ] && kind="first run"
-        summary="run $run ($kind): exit $code; $(field codeGeneration "$out"); window $(field processStartToWindowMs "$out") ms; first page sharp $(field processStartToFirstPageSharpMs "$out") ms; qpdf $(field qpdfVersion "$out")"
+        summary="run $run ($kind): exit $code; $(field codeGeneration "$out"); window $(field processStartToWindowMs "$out") ms; first page sharp $(field processStartToFirstPageSharpMs "$out") ms; qpdf $(field qpdfVersion "$out"); search $(field search "$out")"
         if [ "$code" -eq 0 ] && grep -q '"firstPageSharp": true' "$out"; then
             notice "Smoke test ($label)" "$summary"
         else

@@ -13,9 +13,10 @@ using PdfSuite.Pdf.Remote;
 
 namespace PdfSuite.App;
 
-/// <summary>Per-frame drawing statistics, read by the status bar and the S1 benchmark.</summary>
+/// <summary>Per-frame drawing statistics, read by the status bar, the S1 benchmark and the smoke test.</summary>
 internal readonly record struct FrameStats(
-    int VisibleTiles, int SharpTiles, int PreviewOnlyTiles, int BlankTiles, TimeSpan RenderTime);
+    int VisibleTiles, int SharpTiles, int PreviewOnlyTiles, int BlankTiles, TimeSpan RenderTime,
+    int MatchHighlights = 0, bool CurrentMatchVisible = false);
 
 /// <summary>
 /// A continuous vertical view of a document's pages, drawn from tiles that the worker renders.
@@ -28,6 +29,9 @@ internal readonly record struct FrameStats(
 /// visible page and for the page being read, holding one focusable <see cref="ReadingLine"/>
 /// per text line. Up and Down move the reading position line by line, PageUp and PageDown move
 /// by page, and the view scrolls to keep the focused line in sight.
+///
+/// While a search is shown, its matches on visible pages are highlighted, and the current match
+/// is drawn in a stronger colour with an outline, so it does not rely on colour alone.
 /// </summary>
 internal sealed class DocumentView : Control
 {
@@ -38,6 +42,9 @@ internal sealed class DocumentView : Control
 
     private static readonly IBrush Background = new ImmutableSolidColorBrush(Color.FromRgb(0x52, 0x56, 0x59));
     private static readonly IBrush PageBrush = new ImmutableSolidColorBrush(Colors.White);
+    private static readonly IBrush MatchBrush = new ImmutableSolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xD5, 0x00));
+    private static readonly IBrush CurrentMatchBrush = new ImmutableSolidColorBrush(Color.FromArgb(0x80, 0xFF, 0x8C, 0x00));
+    private static readonly IPen CurrentMatchPen = new ImmutablePen(new ImmutableSolidColorBrush(Color.FromRgb(0xB3, 0x40, 0x00)), 2);
 
     private readonly TileCache _cache = new(capacityBytes: 384L * 1024 * 1024);
     private readonly Dictionary<TileKey, CancellationTokenSource> _inFlight = [];
@@ -56,6 +63,10 @@ internal sealed class DocumentView : Control
     private readonly HashSet<int> _textRequests = [];
     private readonly Dictionary<int, PageElement> _pageElements = [];
     private int? _readingPage;
+
+    private DocumentSearch? _search;
+    private SearchHit? _currentHit;
+    private int _searchRedrawQueued;
 
     public DocumentView()
     {
@@ -82,6 +93,10 @@ internal sealed class DocumentView : Control
     public long CacheBytes => _cache.Bytes;
 
     public DocumentSession? Session => _session;
+
+    public DocumentSearch? Search => _search;
+
+    public SearchHit? CurrentHit => _currentHit;
 
     /// <summary>Raised on the UI thread when a tile arrives: its latency and the worker's render time.</summary>
     public event Action<TimeSpan, TimeSpan>? TileArrived;
@@ -116,6 +131,7 @@ internal sealed class DocumentView : Control
         _textLines.Clear();
         _unreadableText.Clear();
         _readingPage = null;
+        SetSearch(null);
         _session = session;
         _offset = default;
         if (session is not null)
@@ -162,6 +178,89 @@ internal sealed class DocumentView : Control
         }
     }
 
+    /// <summary>Shows a search's matches, or none. The caller owns the search and disposes it.</summary>
+    public void SetSearch(DocumentSearch? search)
+    {
+        if (_search is not null)
+        {
+            _search.Changed -= OnSearchChanged;
+        }
+
+        _search = search;
+        _currentHit = null;
+        if (search is not null)
+        {
+            search.Changed += OnSearchChanged;
+        }
+
+        InvalidateVisual();
+    }
+
+    /// <summary>Makes a match the current one and scrolls it into view.</summary>
+    public void ShowHit(SearchHit hit)
+    {
+        if (_session is null || hit.Page >= _pageTops.Length || hit.Match.Bounds.Count == 0)
+        {
+            return;
+        }
+
+        _currentHit = hit;
+        double scale = DipsPerPoint * _zoom;
+        double top = _pageTops[hit.Page] + (hit.Match.Bounds.Min(b => b.Top) * scale);
+        double bottom = _pageTops[hit.Page] + (hit.Match.Bounds.Max(b => b.Bottom) * scale);
+        double margin = Math.Min(48, Bounds.Height / 4);
+        double y = top < _offset.Y + margin || bottom > _offset.Y + Bounds.Height - margin
+            ? top - (Bounds.Height / 3)
+            : _offset.Y;
+
+        // Only when the page is wider than the view: centre the match across it.
+        double x = _offset.X;
+        if (_extentWidth > Bounds.Width)
+        {
+            double pageLeft = (_extentWidth - (_session.PageSizes[hit.Page].Width * scale)) / 2;
+            double left = pageLeft + (hit.Match.Bounds.Min(b => b.Left) * scale);
+            double right = pageLeft + (hit.Match.Bounds.Max(b => b.Right) * scale);
+            if (left < _offset.X + margin || right > _offset.X + Bounds.Width - margin)
+            {
+                x = ((left + right) / 2) - (Bounds.Width / 2);
+            }
+        }
+
+        ScrollTo(new Vector(x, y));
+    }
+
+    /// <summary>
+    /// Moves the reading position (keyboard focus, for screen readers) to the line holding a
+    /// match, so reading carries on from where the search ended.
+    /// </summary>
+    public async Task FocusHitLineAsync(SearchHit hit)
+    {
+        IReadOnlyList<TextLine> lines = await GetTextLinesAsync(hit.Page) ?? [];
+        if (lines.Count == 0 || hit.Match.Bounds.Count == 0)
+        {
+            await FocusPositionAsync(hit.Page, 0);
+            return;
+        }
+
+        PageRect first = hit.Match.Bounds[0];
+        double middle = (first.Top + first.Bottom) / 2;
+        int best = 0;
+        double bestDistance = double.MaxValue;
+        for (int i = 0; i < lines.Count; i++)
+        {
+            double distance = middle < lines[i].Top ? lines[i].Top - middle
+                : middle > lines[i].Bottom ? middle - lines[i].Bottom
+                : 0;
+            if (distance < bestDistance)
+            {
+                best = i;
+                bestDistance = distance;
+            }
+        }
+
+        await FocusPositionAsync(hit.Page, best);
+    }
+
     public bool AtEnd => _offset.Y >= Math.Max(0, _extentHeight - Bounds.Height) - 0.5;
 
     public override void Render(DrawingContext context)
@@ -174,7 +273,8 @@ internal sealed class DocumentView : Control
             return;
         }
 
-        int visible = 0, sharp = 0, previewOnly = 0, blank = 0;
+        int visible = 0, sharp = 0, previewOnly = 0, blank = 0, highlights = 0;
+        bool currentMatchVisible = false;
         double scaling = RenderScaling;
         double pixelsPerPoint = DipsPerPoint * _zoom * scaling;
         long scaleKey = TileKey.ToScaleKey(pixelsPerPoint);
@@ -213,9 +313,57 @@ internal sealed class DocumentView : Control
                     blank++;
                 }
             }
+
+            if (_search?.MatchesOn(page) is { Count: > 0 } matches)
+            {
+                highlights += DrawMatches(context, page, pageRect, matches, ref currentMatchVisible);
+            }
         }
 
-        LastFrame = new FrameStats(visible, sharp, previewOnly, blank, Stopwatch.GetElapsedTime(started));
+        LastFrame = new FrameStats(
+            visible, sharp, previewOnly, blank, Stopwatch.GetElapsedTime(started), highlights, currentMatchVisible);
+    }
+
+    /// <summary>Draws a page's matches over its tiles; returns how many rectangles it drew.</summary>
+    private int DrawMatches(DrawingContext context, int page, Rect pageRect, IReadOnlyList<TextMatch> matches, ref bool currentMatchVisible)
+    {
+        double scale = DipsPerPoint * _zoom;
+        int drawn = 0;
+        for (int i = 0; i < matches.Count; i++)
+        {
+            bool current = _currentHit is SearchHit hit && hit.Page == page && hit.Index == i;
+            foreach (PageRect bounds in matches[i].Bounds)
+            {
+                var rect = new Rect(
+                    pageRect.X + (bounds.Left * scale),
+                    pageRect.Y + (bounds.Top * scale),
+                    Math.Max(1, (bounds.Right - bounds.Left) * scale),
+                    Math.Max(1, (bounds.Bottom - bounds.Top) * scale)).Inflate(1);
+                if (!rect.Intersects(new Rect(Bounds.Size)))
+                {
+                    continue;
+                }
+
+                context.DrawRectangle(current ? CurrentMatchBrush : MatchBrush, current ? CurrentMatchPen : null, rect);
+                currentMatchVisible |= current;
+                drawn++;
+            }
+        }
+
+        return drawn;
+    }
+
+    // Raised on a background thread after every page searched; one redraw per batch is enough.
+    private void OnSearchChanged()
+    {
+        if (Interlocked.Exchange(ref _searchRedrawQueued, 1) == 0)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                Volatile.Write(ref _searchRedrawQueued, 0);
+                InvalidateVisual();
+            }, DispatcherPriority.Background);
+        }
     }
 
     protected override void OnSizeChanged(SizeChangedEventArgs e)

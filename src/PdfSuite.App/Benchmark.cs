@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -12,8 +13,9 @@ namespace PdfSuite.App;
 /// then scrolls at a constant speed at several zoom levels, recording frame intervals, how
 /// many frames showed blank or preview-only tiles, tile latency, and app plus worker memory.
 /// With --kill-worker, a final phase kills the worker mid-scroll and times the recovery.
-/// With --smoke-test (spike S6), it stops once the first page is sharp and records only the
-/// startup times; packaging CI uses it to launch an installed package.
+/// With --smoke-test (spike S6), it records the startup times once the first page is sharp, checks
+/// that the worker loads qpdf, then searches the whole document for the last page's first line and
+/// moves to that match; packaging CI uses it to launch an installed package.
 /// Results go to a JSON file. The window must stay visible: a hidden window gets no frames.
 /// </summary>
 internal sealed class Benchmark(MainWindow window, AppOptions options)
@@ -31,7 +33,7 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
 
     /// <summary>
     /// Returns false if the document did not open, its first page never became sharp, or (smoke
-    /// test only) the worker could not load qpdf.
+    /// test only) the worker could not load qpdf or the search did not find and show its match.
     /// </summary>
     public async Task<bool> RunAsync()
     {
@@ -66,6 +68,8 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
                 qpdfError = ex.Message;
             }
 
+            var (searchPassed, search) = await SmokeSearchAsync();
+
             await WriteResultsAsync(new JsonObject
             {
                 ["spikeItem"] = "S6",
@@ -76,8 +80,9 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
                 ["qpdfVersion"] = qpdfVersion,
                 ["qpdfError"] = qpdfError,
                 ["startup"] = StartupInfo(startup, openMs, firstPageMs),
+                ["search"] = search,
             });
-            return firstPageSharp && qpdfVersion is not null;
+            return firstPageSharp && qpdfVersion is not null && searchPassed;
         }
 
         using var sampler = new Timer(_ => SampleMemory(), null, TimeSpan.Zero, TimeSpan.FromMilliseconds(250));
@@ -121,6 +126,56 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
             },
         });
         return firstPageSharp;
+    }
+
+    /// <summary>
+    /// Searches every page, from the first, for the first line of text on the last page, then
+    /// moves to the match on the last page and waits until it is drawn on a sharp page. A
+    /// document whose last page has no text skips the search.
+    /// </summary>
+    private async Task<(bool Passed, string Summary)> SmokeSearchAsync()
+    {
+        DocumentSession session = _view.Session!;
+        int last = session.PageSizes.Count - 1;
+        string? query;
+        try
+        {
+            query = (await session.GetTextLinesAsync(last)).Select(l => l.Text.Trim()).FirstOrDefault(t => t.Length > 0);
+        }
+        catch (Exception ex) when (ex is WorkerException or WorkerExitedException)
+        {
+            return (false, $"FAILED: the last page's text could not be read ({ex.Message})");
+        }
+
+        if (query is null)
+        {
+            return (true, "skipped: the last page has no text");
+        }
+
+        var clock = Stopwatch.StartNew();
+        using DocumentSearch search = DocumentSearch.Start(session, query, matchCase: false, wholeWord: false, startPage: 0);
+        await search.Completion;
+        long searchMs = clock.ElapsedMilliseconds;
+        string found = string.Create(CultureInfo.InvariantCulture,
+            $"{search.MatchCount} match(es) for [{query}] in {search.PagesSearched} pages in {searchMs} ms");
+        if (search.Status != SearchStatus.Complete || search.FailedPages.Count > 0)
+        {
+            return (false, $"FAILED: {found}; status {search.Status}, {search.FailedPages.Count} page(s) not searched");
+        }
+
+        if (await search.FindAsync(null, last, forward: true) is not SearchHit hit || hit.Page != last)
+        {
+            return (false, $"FAILED: {found}; none on the last page");
+        }
+
+        clock.Restart();
+        _view.SetSearch(search);
+        _view.ShowHit(hit);
+        bool shown = await WaitForFrameAsync(s => s.CurrentMatchVisible && s.VisibleTiles > 0 && s.SharpTiles == s.VisibleTiles, TimeSpan.FromSeconds(15));
+        _view.SetSearch(null);
+        return shown
+            ? (true, string.Create(CultureInfo.InvariantCulture, $"{found}; shown in {clock.ElapsedMilliseconds} ms"))
+            : (false, $"FAILED: {found}; the match was not shown");
     }
 
     private JsonObject EnvironmentInfo() => new()

@@ -45,7 +45,7 @@ A platform is declared supported only when PRD §6's conditions are met: a clean
 | Zoom | v1 | Prototyped | Ctrl + wheel, and Ctrl + plus or minus, from 10% to 1,600%. Performance measured at 25–800% (S1) |
 | Fit to width, fit to page, rotation | v1 | Not started | — |
 | Page navigation | v1 | Prototyped | PageDown and PageUp, Ctrl+Home and Ctrl+End, the scroll wheel |
-| Search with next, previous and match counts | v1 | Prototyped (no user interface) | One page per worker request, so rendering is not held up by a long search. Case and whole-word options. Each match comes with its rectangles. Text in hidden layers is not matched |
+| Search with next, previous and match counts | v1 | Prototyped | A search bar (Ctrl+F) with next and previous, match case, whole words, and "Match N of M". Matches are highlighted, the current one with an outline. The whole document is searched from the page in view, one page per worker request, so rendering is not held up: 2,000 pages in about 5 s on a development machine. It carries on after a worker crash. Text in hidden layers is not matched. Not yet checked with a screen reader, and keyboard shortcuts are not tested automatically |
 | Select and copy text | v1 | Not started | — |
 | Thumbnails, bookmarks, outline, attachments panel | v1 | Not started | The engine counts attachments |
 | Document properties and metadata | v1 | Prototyped (engine only) | Read by PDFium and qpdf. No user interface |
