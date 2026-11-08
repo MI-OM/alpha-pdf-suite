@@ -42,6 +42,9 @@ internal sealed class MainWindow : Window
 
         var open = new Button { Content = "Open PDF…" };
         open.Click += async (_, _) => await PickAndOpenAsync();
+        var close = new Button { Content = "Close Document", Margin = new Thickness(8, 0, 0, 0) };
+        ToolTip.SetTip(close, "Close this document (Ctrl+W)");
+        close.Click += (_, _) => CloseDocument();
         var print = new Button { Content = "Print…", Margin = new Thickness(8, 0, 0, 0) };
         ToolTip.SetTip(print, "Print this document");
         print.Click += async (_, _) => await PrintAsync();
@@ -55,10 +58,12 @@ internal sealed class MainWindow : Window
 
         var bar = new DockPanel { Margin = new Thickness(8) };
         DockPanel.SetDock(open, Dock.Left);
+        DockPanel.SetDock(close, Dock.Left);
         DockPanel.SetDock(print, Dock.Left);
         DockPanel.SetDock(search, Dock.Left);
         DockPanel.SetDock(properties, Dock.Left);
         bar.Children.Add(open);
+        bar.Children.Add(close);
         bar.Children.Add(print);
         bar.Children.Add(search);
         bar.Children.Add(properties);
@@ -242,6 +247,10 @@ internal sealed class MainWindow : Window
                 e.Handled = true;
                 OpenSearch();
                 break;
+            case Avalonia.Input.Key.W when modifiers == Avalonia.Input.KeyModifiers.Control:
+                e.Handled = true;
+                CloseDocument();
+                break;
             case Avalonia.Input.Key.G when modifiers == Avalonia.Input.KeyModifiers.Control:
                 e.Handled = true;
                 _navigation.FocusPageNumber();
@@ -260,6 +269,27 @@ internal sealed class MainWindow : Window
                 _ = FindAsync(forward: modifiers == Avalonia.Input.KeyModifiers.None);
                 break;
         }
+    }
+
+    /// <summary>
+    /// Closes the document: its search, selection and worker go with it. Nothing is saved or changed,
+    /// as the viewer never writes to the file it opened.
+    /// </summary>
+    private void CloseDocument()
+    {
+        if (_view.Session is not DocumentSession session)
+        {
+            return;
+        }
+
+        ClearSearch();
+        _searchPanel.Status = string.Empty;
+        _view.SetDocument(null);
+        session.Dispose();
+        _documentName = string.Empty;
+        _documentSize = 0;
+        AutomationProperties.SetName(_view, null);
+        ShowMessage(null);
     }
 
     /// <summary>

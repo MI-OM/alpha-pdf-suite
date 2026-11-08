@@ -39,7 +39,7 @@ A platform is declared supported only when PRD §6's conditions are met: a clean
 
 | Capability | Release | Status | Notes |
 |---|---|---|---|
-| Open local PDF files | v1 | Prototyped | From the command line or the native Open dialog. Parsed only in the worker |
+| Open local PDF files | v1 | Prototyped | From the command line or the native Open dialog. Parsed only in the worker. Close Document (Ctrl+W) closes it and ends its worker; a document closed and reopened is unchanged, and its file is never written to |
 | Multiple documents and tabs | v1 | Not started | The spike viewer shows one document |
 | Single-page, continuous, facing-page and presentation modes | v1 | Prototyped (continuous only) | — |
 | Zoom | v1 | Prototyped | Zoom out and in buttons, Ctrl + wheel, and Ctrl + plus or minus, from 10% to 1,600%. Performance measured at 25–800% (S1) |

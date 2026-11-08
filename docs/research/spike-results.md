@@ -819,6 +819,14 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
   - **The smoke test,** locally: the 2,000th page's 3,109 characters selected, holding the search phrase.
   - **Not verified:** the keyboard shortcuts (they need keystrokes), and macOS and Linux, until CI runs.
 
+### Close Document, and the open-close-reopen gate (Milestone 1, 2026-11-07)
+- **Close Document** (button, or Ctrl+W) closes the document: its search, selection and worker go with it. The viewer never writes to the file it opened, so nothing needs saving.
+- **The roadmap's gate,** "test documents can be opened, closed, and reopened without corruption", now has a test. A 30-page document is opened, a tile and a page's text are read, and it is closed. Then:
+  - the worker process has ended
+  - reopened, the same page renders the same pixels and gives the same text
+  - the document's bytes hash the same as before
+- **Through UI Automation:** after Close Document the status reads "No document open.", the document's worker process has gone, and the page and zoom controls are disabled.
+
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:
   - **The content-stream lexer:** 20,000 random inputs, biased towards its special characters. It never throws, and never returns more bytes than it was given.
