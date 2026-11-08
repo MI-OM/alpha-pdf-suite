@@ -45,6 +45,9 @@ public interface IPdfDocument : IDisposable
 
     /// <summary>The document's information keys, PDF version, encryption, permissions and whether it is tagged.</summary>
     DocumentInfo GetDocumentInfo();
+
+    /// <summary>The page's visible characters and their boxes, for text selection; see <see cref="PageCharacters"/>.</summary>
+    PageCharacters GetCharacters(int pageIndex);
 }
 
 /// <summary>Page width and height in PDF points (1/72 inch), as reported by the engine.</summary>

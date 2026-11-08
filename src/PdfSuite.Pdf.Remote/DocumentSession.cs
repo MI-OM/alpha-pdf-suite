@@ -116,6 +116,12 @@ public sealed class DocumentSession : IDisposable
         }
     }
 
+    public async Task<PageCharacters> GetCharactersAsync(int pageIndex, CancellationToken cancellationToken = default)
+    {
+        var (client, documentId, _) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
+        return await client.GetCharactersAsync(documentId, pageIndex, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<DocumentInfo> GetDocumentInfoAsync(CancellationToken cancellationToken = default)
     {
         var (client, documentId, _) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);

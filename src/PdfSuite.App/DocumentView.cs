@@ -75,6 +75,16 @@ internal sealed class DocumentView : Control
     private SearchHit? _currentHit;
     private int _searchRedrawQueued;
 
+    // Text selection: carets (page, position between characters) at each end, in the order made.
+    private static readonly IBrush SelectionBrush = new ImmutableSolidColorBrush(Color.FromArgb(0x60, 0x2B, 0x6C, 0xD9));
+    private const int CharacterCacheSize = 48;
+    private readonly Dictionary<int, PageCharacters> _characters = [];
+    private readonly HashSet<int> _characterRequests = [];
+    private (int Page, int Caret)? _selectionAnchor;
+    private (int Page, int Caret)? _selectionFocus;
+    private (int Page, Point At)? _pendingDrag;
+    private bool _dragging;
+
     public DocumentView()
     {
         Focusable = true;
@@ -111,6 +121,9 @@ internal sealed class DocumentView : Control
     /// <summary>Raised on the UI thread when what the status bar shows may have changed.</summary>
     public event Action? StatusChanged;
 
+    /// <summary>Raised when the reader asks to copy (Ctrl+C). The window decides, as copying depends on the document's permissions.</summary>
+    public event Action? CopyRequested;
+
     public int CurrentPage
     {
         get
@@ -139,6 +152,9 @@ internal sealed class DocumentView : Control
         _unreadableText.Clear();
         _readingPage = null;
         SetSearch(null);
+        ClearSelection();
+        _characters.Clear();
+        _characterRequests.Clear();
         _session = session;
         _offset = default;
         if (session is not null)
@@ -359,6 +375,8 @@ internal sealed class DocumentView : Control
             {
                 highlights += DrawMatches(context, page, pageRect, matches, ref currentMatchVisible);
             }
+
+            DrawSelection(context, page, pageRect);
         }
 
         LastFrame = new FrameStats(
@@ -422,6 +440,299 @@ internal sealed class DocumentView : Control
     {
         base.OnPointerPressed(e);
         Focus();
+        if (_session is null || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        if (PageAt(e.GetPosition(this), clamp: false) is not (int page, Point at))
+        {
+            ClearSelection();
+            return;
+        }
+
+        if (e.ClickCount == 2)
+        {
+            _ = SelectWordAsync(page, at);
+            return;
+        }
+
+        ClearSelection();
+        _dragging = true;
+        e.Pointer.Capture(this);
+        _pendingDrag = (page, at);
+        _ = StartDragAsync(page, at);
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        if (_dragging && PageAt(e.GetPosition(this), clamp: true) is (int page, Point at))
+        {
+            _pendingDrag = (page, at);
+            ExtendSelection();
+        }
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        if (!_dragging)
+        {
+            return;
+        }
+
+        _dragging = false;
+        e.Pointer.Capture(null);
+
+        // A click without a drag selects nothing.
+        if (_selectionAnchor == _selectionFocus)
+        {
+            ClearSelection();
+        }
+    }
+
+    /// <summary>Whether any text is selected.</summary>
+    public bool HasSelection => _selectionAnchor is not null && _selectionFocus is not null && _selectionAnchor != _selectionFocus;
+
+    public void ClearSelection()
+    {
+        _selectionAnchor = null;
+        _selectionFocus = null;
+        _pendingDrag = null;
+        InvalidateVisual();
+    }
+
+    /// <summary>Selects the text of the page in view (decisions for review, D5: not the whole document).</summary>
+    public async Task SelectAllOnPageAsync()
+    {
+        int page = CurrentReadingPosition()?.Page ?? CurrentPage;
+        if (await CharactersAsync(page) is { Count: > 0 } characters)
+        {
+            _selectionAnchor = (page, 0);
+            _selectionFocus = (page, characters.Count);
+            InvalidateVisual();
+        }
+    }
+
+    /// <summary>
+    /// The selected text, or with nothing selected the focused reading line's, so keyboard and
+    /// screen-reader users can copy too. Null if there is nothing to copy.
+    /// </summary>
+    public async Task<string?> GetSelectedTextAsync()
+    {
+        if (!HasSelection)
+        {
+            return CurrentReadingPosition() is (int page, int line) && line >= 0 && _textLines.TryGetValue(page, out var lines) && line < lines.Count
+                ? lines[line].Text
+                : null;
+        }
+
+        var (start, end) = OrderedSelection();
+        var pages = new List<string>();
+        for (int page = start.Page; page <= end.Page; page++)
+        {
+            PageCharacters characters = await CharactersAsync(page) ?? PageCharacters.Empty;
+            int from = page == start.Page ? start.Caret : 0;
+            int to = page == end.Page ? end.Caret : characters.Count;
+            pages.Add(TextSelection.Extract(characters, from, to));
+        }
+
+        string text = TextSelection.JoinPages(pages);
+        return text.Length > 0 ? text : null;
+    }
+
+    private ((int Page, int Caret) Start, (int Page, int Caret) End) OrderedSelection()
+    {
+        var a = _selectionAnchor!.Value;
+        var b = _selectionFocus!.Value;
+        return a.Page < b.Page || (a.Page == b.Page && a.Caret <= b.Caret) ? (a, b) : (b, a);
+    }
+
+    private async Task StartDragAsync(int page, Point at)
+    {
+        if (await CharactersAsync(page) is not { } characters || !_dragging)
+        {
+            return;
+        }
+
+        int caret = TextSelection.CaretAt(characters, at.X, at.Y);
+        _selectionAnchor = (page, caret);
+        _selectionFocus ??= (page, caret);
+        ExtendSelection();
+    }
+
+    // Moves the selection's far end to the pointer, once that page's characters are loaded.
+    private void ExtendSelection()
+    {
+        if (_selectionAnchor is null || _pendingDrag is not (int page, Point at))
+        {
+            return;
+        }
+
+        if (_characters.TryGetValue(page, out PageCharacters? characters))
+        {
+            _selectionFocus = (page, TextSelection.CaretAt(characters, at.X, at.Y));
+            InvalidateVisual();
+        }
+        else
+        {
+            _ = LoadCharactersThenExtendAsync(page);
+        }
+    }
+
+    private async Task LoadCharactersThenExtendAsync(int page)
+    {
+        await CharactersAsync(page);
+        if (_dragging || _pendingDrag?.Page == page)
+        {
+            ExtendSelection();
+        }
+    }
+
+    private async Task SelectWordAsync(int page, Point at)
+    {
+        if (await CharactersAsync(page) is not { Count: > 0 } characters)
+        {
+            return;
+        }
+
+        int caret = TextSelection.CaretAt(characters, at.X, at.Y);
+        var (start, end) = TextSelection.WordAt(characters, Math.Min(caret, characters.Count - 1));
+        _selectionAnchor = (page, start);
+        _selectionFocus = (page, end);
+        InvalidateVisual();
+    }
+
+    /// <summary>A page's characters, from the cache or the worker; null if they could not be read.</summary>
+    private async Task<PageCharacters?> CharactersAsync(int page)
+    {
+        if (_characters.TryGetValue(page, out PageCharacters? cached))
+        {
+            return cached;
+        }
+
+        DocumentSession? session = _session;
+        if (session is null || !_characterRequests.Add(page))
+        {
+            return null;
+        }
+
+        try
+        {
+            PageCharacters characters = await session.GetCharactersAsync(page);
+            if (session != _session)
+            {
+                return null;
+            }
+
+            TrimCharacterCache();
+            _characters[page] = characters;
+            InvalidateVisual();
+            return characters;
+        }
+        catch (Exception ex) when (ex is WorkerException or WorkerExitedException or OperationCanceledException or InvalidDataException)
+        {
+            return null;
+        }
+        finally
+        {
+            _characterRequests.Remove(page);
+        }
+    }
+
+    // Keeps the pages at the selection's ends and in view; drops others once the cache is full.
+    private void TrimCharacterCache()
+    {
+        if (_characters.Count < CharacterCacheSize)
+        {
+            return;
+        }
+
+        var keep = new HashSet<int>(VisiblePages());
+        if (_selectionAnchor is (int anchorPage, _))
+        {
+            keep.Add(anchorPage);
+        }
+
+        if (_selectionFocus is (int focusPage, _))
+        {
+            keep.Add(focusPage);
+        }
+
+        foreach (int page in _characters.Keys.Where(p => !keep.Contains(p)).Take(_characters.Count - CharacterCacheSize + 1).ToArray())
+        {
+            _characters.Remove(page);
+        }
+    }
+
+    /// <summary>
+    /// The page under a point in the view and the point in that page's coordinates (points from its
+    /// top-left corner). With <paramref name="clamp"/>, a point between or beside pages goes to the
+    /// nearest page, so a drag can carry on past a page's edge.
+    /// </summary>
+    private (int Page, Point At)? PageAt(Point point, bool clamp)
+    {
+        double scale = DipsPerPoint * _zoom;
+        int? best = null;
+        double bestDistance = double.MaxValue;
+        foreach (int page in VisiblePages())
+        {
+            Rect rect = PageRect(page);
+            if (rect.Contains(point))
+            {
+                best = page;
+                break;
+            }
+
+            double distance = point.Y < rect.Top ? rect.Top - point.Y : point.Y > rect.Bottom ? point.Y - rect.Bottom : 0;
+            if (clamp && distance < bestDistance)
+            {
+                best = page;
+                bestDistance = distance;
+            }
+        }
+
+        if (best is not int found)
+        {
+            return null;
+        }
+
+        Rect pageRect = PageRect(found);
+        PageSize size = _session!.PageSizes[found];
+        double x = Math.Clamp((point.X - pageRect.X) / scale, 0, size.Width);
+        double y = Math.Clamp((point.Y - pageRect.Y) / scale, 0, size.Height);
+        return (found, new Point(x, y));
+    }
+
+    private void DrawSelection(DrawingContext context, int page, Rect pageRect)
+    {
+        if (!HasSelection)
+        {
+            return;
+        }
+
+        var (start, end) = OrderedSelection();
+        if (page < start.Page || page > end.Page)
+        {
+            return;
+        }
+
+        if (!_characters.TryGetValue(page, out PageCharacters? characters))
+        {
+            // A page inside a long selection that scrolled into view: draw it once loaded.
+            _ = CharactersAsync(page);
+            return;
+        }
+
+        int from = page == start.Page ? start.Caret : 0;
+        int to = page == end.Page ? end.Caret : characters.Count;
+        double scale = DipsPerPoint * _zoom;
+        foreach (PageRect r in TextSelection.Highlight(characters, from, to))
+        {
+            context.FillRectangle(SelectionBrush, new Rect(
+                pageRect.X + (r.Left * scale), pageRect.Y + (r.Top * scale), (r.Right - r.Left) * scale, (r.Bottom - r.Top) * scale));
+        }
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
@@ -467,6 +778,9 @@ internal sealed class DocumentView : Control
             case Key.D0 or Key.NumPad0 when control: FitPage(); break;
             case Key.D1 or Key.NumPad1 when control: SetZoom(1); break;
             case Key.D2 or Key.NumPad2 when control: FitWidth(); break;
+            case Key.A when control: _ = SelectAllOnPageAsync(); break;
+            case Key.C when control: CopyRequested?.Invoke(); break;
+            case Key.Escape when HasSelection: ClearSelection(); break;
             default: e.Handled = false; break;
         }
     }

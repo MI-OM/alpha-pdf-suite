@@ -793,6 +793,32 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
   - Fit Width gave 120%, Fit Page 61% and Actual Size 100%; zoom in and out stepped by 25%. A screenshot showed the fitted page whole.
   - **Not verified:** typing a page number, which needs Enter pressed.
 
+### Text selection and copy (Milestone 1, 2026-11-07)
+- **The worker sends a page's visible characters** with their boxes (`GetCharacters`, a new request). It uses PDFium's loose character boxes, so every character on a line has the same height. Text in hidden layers is left out, as for search and the reading lines.
+- **The selection logic** is in the abstractions (`TextSelection`), so it is tested without the UI: the caret nearest a point (nearest line first), words, highlight rectangles joined per line, and the copied text with the engine's line breaks.
+- **In the viewer:**
+  - Drag to select, across pages too; double-click selects a word; a plain click or Escape clears.
+  - Ctrl+A selects the page in view (decisions for review, D5). Ctrl+C or the **Copy** context menu copies.
+  - With nothing selected, Ctrl+C copies the focused reading line, so keyboard and screen-reader users can copy.
+  - **Copying honours the document's "copy text" permission** (D1). Messages are proposed in the copy rules (§5b).
+- **A bug, found and fixed:** on Windows, copied text vanished from the clipboard when the app closed, because the data stayed the app's own. The app now flushes the clipboard after copying (`IClipboard.FlushAsync`).
+- **The packaged smoke test** now also selects the text of the page it moved to and checks that it holds the search phrase.
+- **Evidence (Windows):**
+  - **7 tests:**
+    - characters and boxes against the canary fixture's known layout
+    - the same through the worker as from the engine
+    - hidden-layer text left out, with the engine on its own as the negative control
+    - a dragged word, a backwards drag and a drag past the line's end
+    - a double-clicked word joined by a hyphen
+    - a two-line selection highlighted line by line
+    - the nearest-caret rules on synthetic characters
+  - **Through the app's own window,** with mouse messages posted to it (the real cursor and focus untouched):
+    - Dragging over "Simple text page 1" and choosing **Copy** put exactly that on the clipboard; a double-click copied the word "text".
+    - On a copy-restricted file the app said "This document does not allow copying text." and left the clipboard as it was.
+    - After closing the app normally, the copied text was still on the clipboard. Before the fix, it was gone.
+  - **The smoke test,** locally: the 2,000th page's 3,109 characters selected, holding the search phrase.
+  - **Not verified:** the keyboard shortcuts (they need keystrokes), and macOS and Linux, until CI runs.
+
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:
   - **The content-stream lexer:** 20,000 random inputs, biased towards its special characters. It never throws, and never returns more bytes than it was given.

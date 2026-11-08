@@ -335,6 +335,44 @@ public sealed class WorkerClient : IDisposable
         return new DocumentInfo(metadata, version, Encrypted: (flags & 1) != 0, permissions, Tagged: (flags & 2) != 0);
     }
 
+    /// <summary>A page's visible characters and their boxes; see <see cref="IPdfDocument.GetCharacters"/>.</summary>
+    public async Task<PageCharacters> GetCharactersAsync(int documentId, int pageIndex, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        int id = NextRequestId();
+        Pending pending = Register(id);
+        byte[] payload = new byte[8];
+        var writer = new PayloadWriter(payload);
+        writer.WriteInt32(documentId);
+        writer.WriteInt32(pageIndex);
+        Send(MessageKind.GetCharacters, id, payload);
+
+        Message response;
+        using (cancellationToken.Register(() => CancelRequest(id)))
+        {
+            response = await pending.Completion.Task.ConfigureAwait(false);
+        }
+
+        using var owned = response;
+        ThrowIfError(response);
+        Expect(response, MessageKind.Characters);
+
+        var reader = new PayloadReader(response.Payload);
+        string text = reader.ReadString() ?? string.Empty;
+        var boxes = new PageRect[reader.ReadInt32()];
+        for (int i = 0; i < boxes.Length; i++)
+        {
+            boxes[i] = new PageRect(reader.ReadDouble(), reader.ReadDouble(), reader.ReadDouble(), reader.ReadDouble());
+        }
+
+        if (boxes.Length != text.Length)
+        {
+            throw new InvalidDataException("The worker sent a different number of characters and boxes.");
+        }
+
+        return new PageCharacters(text, boxes);
+    }
+
     /// <summary>Finds text on one page; see <see cref="IPdfDocument.FindText"/>.</summary>
     public async Task<IReadOnlyList<TextMatch>> FindTextAsync(
         int documentId, int pageIndex, string query, bool matchCase = false, bool wholeWord = false, CancellationToken cancellationToken = default)

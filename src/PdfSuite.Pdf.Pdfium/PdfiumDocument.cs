@@ -292,6 +292,64 @@ public sealed unsafe class PdfiumDocument : IPdfDocument
         }
     }
 
+    public PageCharacters GetCharacters(int pageIndex)
+    {
+        lock (PdfiumLibrary.Sync)
+        {
+            double pageHeight = GetPageSize(pageIndex).Height;
+            nint textPage = PdfiumNative.FPDFText_LoadPage(GetLoadedPage(pageIndex));
+            if (textPage == 0)
+            {
+                throw new InvalidOperationException($"PDFium could not extract text from page {pageIndex}.");
+            }
+
+            try
+            {
+                int count = PdfiumNative.FPDFText_CountChars(textPage);
+                if (count <= 0)
+                {
+                    return PageCharacters.Empty;
+                }
+
+                bool[]? hidden = FindHiddenCharacters(textPage, count);
+                var text = new System.Text.StringBuilder(count);
+                var boxes = new List<PageRect>(count);
+                for (int i = 0; i < count; i++)
+                {
+                    char c = (char)PdfiumNative.FPDFText_GetUnicode(textPage, i);
+
+                    // PDFium marks the lines it detects with a generated "\r\n"; one '\n' is kept.
+                    if ((hidden is not null && hidden[i]) || c == '\r' || c == '\0')
+                    {
+                        continue;
+                    }
+
+                    if (c == '\n')
+                    {
+                        if (text.Length > 0 && text[^1] != '\n')
+                        {
+                            text.Append('\n');
+                            boxes.Add(default);
+                        }
+
+                        continue;
+                    }
+
+                    FS_RECTF box;
+                    bool found = PdfiumNative.FPDFText_GetLooseCharBox(textPage, i, &box) != 0 && box.Right > box.Left && box.Top > box.Bottom;
+                    text.Append(c);
+                    boxes.Add(found ? new PageRect(box.Left, pageHeight - box.Top, box.Right, pageHeight - box.Bottom) : default);
+                }
+
+                return new PageCharacters(text.ToString(), boxes);
+            }
+            finally
+            {
+                PdfiumNative.FPDFText_ClosePage(textPage);
+            }
+        }
+    }
+
     // The text rectangles of a character range, converted to top-left-origin points.
     private static PageRect[] Rectangles(nint textPage, int start, int count, double pageHeight)
     {

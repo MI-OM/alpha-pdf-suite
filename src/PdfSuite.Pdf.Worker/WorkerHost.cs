@@ -108,6 +108,9 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
                 case MessageKind.GetDocumentInfo:
                     GetDocumentInfo(request);
                     break;
+                case MessageKind.GetCharacters:
+                    GetCharacters(request);
+                    break;
                 case MessageKind.Print:
                     Print(request);
                     break;
@@ -295,6 +298,28 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
         }
 
         MessageIO.Write(output, MessageKind.TextMatches, request.RequestId, payload);
+    }
+
+    // Payload: [docId][page]. Response: [text][int32 n] then n x [4 x double box].
+    private void GetCharacters(in Message request)
+    {
+        var reader = new PayloadReader(request.Payload);
+        IPdfDocument document = _documents[reader.ReadInt32()];
+        PageCharacters characters = document.GetCharacters(reader.ReadInt32());
+
+        byte[] payload = new byte[PayloadWriter.SizeOf(characters.Text) + 4 + (32 * characters.Boxes.Count)];
+        var writer = new PayloadWriter(payload);
+        writer.WriteString(characters.Text);
+        writer.WriteInt32(characters.Boxes.Count);
+        foreach (PageRect box in characters.Boxes)
+        {
+            writer.WriteDouble(box.Left);
+            writer.WriteDouble(box.Top);
+            writer.WriteDouble(box.Right);
+            writer.WriteDouble(box.Bottom);
+        }
+
+        MessageIO.Write(output, MessageKind.Characters, request.RequestId, payload);
     }
 
     // Payload: [docId]. Response: [version][int32 flags: 1 encrypted, 2 tagged][int32 permission bits]

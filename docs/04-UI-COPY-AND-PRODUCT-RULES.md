@@ -192,6 +192,16 @@ Do not promise OCR will always recognize every word correctly. Show the search l
 
 **Messages:** "Open a PDF to see its properties." and "We couldn't read this document's properties."
 
+## 5b. Copying text (proposed 2026-11-07, for review)
+
+**Context menu:** Copy, Select All (the Edit menu's names, §3)
+
+**Messages:**
+- Copied the selected text.
+- This document does not allow copying text.
+- Select text to copy it.
+- We couldn't copy the text.
+
 ## 6. Password-protected document
 
 **Heading:** This document is password-protected

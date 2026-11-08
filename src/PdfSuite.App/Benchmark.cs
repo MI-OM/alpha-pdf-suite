@@ -172,10 +172,20 @@ internal sealed class Benchmark(MainWindow window, AppOptions options)
         _view.SetSearch(search);
         _view.ShowHit(hit);
         bool shown = await WaitForFrameAsync(s => s.CurrentMatchVisible && s.VisibleTiles > 0 && s.SharpTiles == s.VisibleTiles, TimeSpan.FromSeconds(15));
+        long shownMs = clock.ElapsedMilliseconds;
         _view.SetSearch(null);
-        return shown
-            ? (true, string.Create(CultureInfo.InvariantCulture, $"{found}; shown in {clock.ElapsedMilliseconds} ms"))
-            : (false, $"FAILED: {found}; the match was not shown");
+        if (!shown)
+        {
+            return (false, $"FAILED: {found}; the match was not shown");
+        }
+
+        // Text selection on the same page: Select All, then the text it would copy.
+        await _view.SelectAllOnPageAsync();
+        string? selected = await _view.GetSelectedTextAsync();
+        _view.ClearSelection();
+        return selected?.Contains(query, StringComparison.Ordinal) == true
+            ? (true, string.Create(CultureInfo.InvariantCulture, $"{found}; shown in {shownMs} ms; page text selected ({selected.Length} characters)"))
+            : (false, $"FAILED: {found}; shown, but selecting the page's text did not include it");
     }
 
     private JsonObject EnvironmentInfo() => new()

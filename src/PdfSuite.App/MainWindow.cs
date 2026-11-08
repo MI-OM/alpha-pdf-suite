@@ -5,6 +5,7 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Layout;
+using Avalonia.Input.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using PdfSuite.Pdf.Abstractions;
@@ -64,6 +65,12 @@ internal sealed class MainWindow : Window
         bar.Children.Add(_status);
 
         _navigation = new NavigationBar(_view);
+        _view.CopyRequested += () => _ = CopyAsync();
+        var copyItem = new MenuItem { Header = "Copy", InputGesture = new Avalonia.Input.KeyGesture(Avalonia.Input.Key.C, Avalonia.Input.KeyModifiers.Control) };
+        copyItem.Click += async (_, _) => await CopyAsync();
+        var selectAllItem = new MenuItem { Header = "Select All", InputGesture = new Avalonia.Input.KeyGesture(Avalonia.Input.Key.A, Avalonia.Input.KeyModifiers.Control) };
+        selectAllItem.Click += async (_, _) => await _view.SelectAllOnPageAsync();
+        _view.ContextMenu = new ContextMenu { ItemsSource = new[] { copyItem, selectAllItem } };
         _searchPanel = new SearchPanel { IsVisible = false };
         _searchPanel.FindRequested += forward => _ = FindAsync(forward);
         _searchPanel.QueryChanged += OnSearchQueryChanged;
@@ -253,6 +260,63 @@ internal sealed class MainWindow : Window
                 _ = FindAsync(forward: modifiers == Avalonia.Input.KeyModifiers.None);
                 break;
         }
+    }
+
+    /// <summary>
+    /// Copies the selected text, or the focused reading line's, to the clipboard, if the document
+    /// allows copying (decisions for review, D1).
+    /// </summary>
+    private async Task CopyAsync()
+    {
+        if (_view.Session is not DocumentSession session)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!(await session.GetDocumentInfoAsync()).Permissions.CopyText)
+            {
+                ShowBriefly("This document does not allow copying text.");
+                return;
+            }
+
+            string? text = await _view.GetSelectedTextAsync();
+            if (text is null)
+            {
+                ShowBriefly("Select text to copy it.");
+                return;
+            }
+
+            if (Clipboard is not { } clipboard)
+            {
+                ShowBriefly("We couldn't copy the text.");
+                return;
+            }
+
+            await clipboard.SetTextAsync(text);
+
+            // Otherwise, on Windows, the text is lost from the clipboard when the app closes.
+            await clipboard.FlushAsync();
+            ShowBriefly("Copied the selected text.");
+        }
+        catch (Exception ex) when (ex is WorkerException or WorkerExitedException)
+        {
+            ShowBriefly("We couldn't copy the text.");
+        }
+    }
+
+    /// <summary>A status message that gives way to the usual status after a few seconds.</summary>
+    private void ShowBriefly(string message)
+    {
+        ShowMessage(message);
+        DispatcherTimer.RunOnce(() =>
+        {
+            if (_message == message)
+            {
+                ShowMessage(null);
+            }
+        }, TimeSpan.FromSeconds(4));
     }
 
     private async Task ShowPropertiesAsync()

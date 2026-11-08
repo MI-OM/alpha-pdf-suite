@@ -24,6 +24,7 @@ public enum MessageKind : byte
     GetMetadata = 10,
     FindText = 11,
     GetDocumentInfo = 12,
+    GetCharacters = 13,
     AllocateForTest = 90,
     CountDocumentsForTest = 91,
 
@@ -39,6 +40,7 @@ public enum MessageKind : byte
     Metadata = 110,
     TextMatches = 111,
     DocumentInfo = 112,
+    Characters = 113,
     Error = 199,
 }
 

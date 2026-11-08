@@ -203,6 +203,11 @@ internal static unsafe partial class PdfiumNative
     [LibraryImport(Library)]
     internal static partial int FPDFText_GetCharBox(nint textPage, int index, double* left, double* right, double* bottom, double* top);
 
+    // The character's box with the font's full ascent and descent, so every character on a line
+    // has the same height. Page coordinates, origin bottom-left.
+    [LibraryImport(Library)]
+    internal static partial int FPDFText_GetLooseCharBox(nint textPage, int index, FS_RECTF* rect);
+
     [LibraryImport(Library)]
     internal static partial int FPDFText_CountRects(nint textPage, int startIndex, int count);
 
