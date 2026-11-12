@@ -222,6 +222,25 @@ Do not promise OCR will always recognize every word correctly. Show the search l
 
 **Empty:** No recent documents, shown disabled (§2 allows hiding the action or explaining)
 
+## 5e. Page editing and saving (proposed 2026-11-12, for review)
+
+**Buttons:** Rotate Left, Rotate Right, Delete Page, Undo, Redo, Save a Copy… (the Document and Edit menus' names, §3; §7's "Save a copy")
+
+**Status:** "<name> (edited, not saved)" while there are unsaved changes
+
+**Messages:**
+- Turned page 3 to the right. (or "to the left")
+- Deleted page 3. Ctrl+Z undoes it.
+- A document needs at least one page.
+- This document does not allow changing its pages.
+- We couldn't change the pages of this document.
+- Saved a copy as <file name>.
+- Open a PDF to save a copy of it.
+
+**Suggested file name:** "<name> (edited).pdf"
+
+**Delete Page asks nothing:** the change can be undone, and nothing is written until the reader saves. The strongest warning is kept for what cannot be undone (§8).
+
 ## 6. Password-protected document
 
 **Heading:** This document is password-protected

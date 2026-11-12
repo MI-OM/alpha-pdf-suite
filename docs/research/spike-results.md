@@ -874,6 +874,32 @@ Work done after the spike, which the go/no-go section carried into Milestone 1. 
 - **The network check** passed with search and selection in the traced run. The glibc floor stayed at 2.34.
 - **Not covered by CI:** the dialogs, toolbar and sidebar on macOS and Linux, keyboard shortcuts, and real screen readers.
 
+### Page editing and Save a Copy (Milestones 2 and 3, 2026-11-12)
+- **One page operation does it all.** `QpdfPages.Rebuild`, in the worker, builds a document from a list of pages: a source document's page turned by quarter turns, or a blank page. Rotating, deleting, reordering, duplicating, extracting, inserting and merging are each such a list.
+  - The first source's document information, metadata, outline, forms, structure tree and encryption are kept.
+  - Pages from other documents are copied in with everything they use.
+  - A duplicated page gets its own annotations; form-field widgets are left off the copy.
+  - A bookmark to a removed page goes nowhere, and the outline lists it so.
+- **Permissions are honoured:** a document whose permissions forbid assembly is refused, unless it was opened with its owner password.
+  - qpdf's C API cannot tell the owner password from the user's, so the worker asks PDFium for the effective permission and tells qpdf (`OwnerAccess`).
+  - The refusal is a `NotAllowed` error carrying the source's index.
+- **In the app:**
+  - Rotate Left, Rotate Right and Delete Page act on the page in view, and Undo and Redo keep 20 earlier versions.
+  - Each change is built in the worker and shown at once. The file on disk is untouched until the reader saves.
+  - **Save a Copy** suggests "<name> (edited).pdf". `SafeFile` writes a temporary file in the target's folder, flushes it to disk, reads it back and compares, then moves it over the target in one step. On any failure the target is unchanged, the temporary file is removed, and the copy rules' "Save failed" message is shown.
+  - Closing, opening another document or quitting with unsaved changes asks "Save your changes?" (Save, Discard Changes, Cancel).
+- **Found while checking it:** opening a large document on a heavily loaded machine (96% CPU) failed. Opening used the 15-second hang limit, and its clock starts before the new worker is ready, so a healthy worker was stopped and a valid file reported as unreadable. Opening now gets the size-scaled limit other whole-file operations have (30 s plus 1 s per MB).
+- **Evidence (Windows):**
+  - **14 tests:**
+    - 11 for page operations: rotation adding up, delete, reorder, extract, duplicate with annotations, insertion from another document and a blank page, metadata kept, encryption kept, permissions with the owner password, a bookmark to a deleted page, and rejected requests. Every result was checked with PDFium.
+    - 3 for `SafeFile`: exact bytes, a longer file replaced completely, and a failed save leaving the target and folder as they were.
+  - **Through UI Automation:**
+    - Rotate Right turned page 1, which Document Properties then gave as 11 × 8.5 in. Delete Page, Undo and Redo moved between 3 and 2 pages, with "(edited, not saved)" in the status.
+    - Close Document asked "Save your changes?", and Cancel kept the document. Quitting with no edits exited at once; with edits it asked, and Discard Changes exited.
+    - Save a Copy opened the Windows save dialog suggesting "simple-text (edited)".
+  - **Not driven:** saving through that dialog to the end. Windows 11's save dialog shows its file name and Save button in a form this script could not operate. The write itself is `SafeFile`, which the tests cover.
+  - **Start-up timings were not settled locally:** the machine was saturated by other work. Today's build seemed slower to reach the window when given a file, and faster without one; nothing that runs before the window differs with a file. CI's clean runners are the measure.
+
 ### Fuzz tests, and a weekly audit
 - **`FuzzTests`, using a fixed seed** so every run tries the same cases:
   - **The content-stream lexer:** 20,000 random inputs, biased towards its special characters. It never throws, and never returns more bytes than it was given.

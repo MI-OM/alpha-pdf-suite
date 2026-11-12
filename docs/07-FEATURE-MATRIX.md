@@ -74,11 +74,11 @@ A platform is declared supported only when PRD §6's conditions are met: a clean
 
 | Capability | Release | Status | Notes |
 |---|---|---|---|
-| Insert pages from another PDF | v1 | Not started | The engine imports pages by range; the redactor and fixture generator use it |
-| Delete, rotate, reorder, duplicate pages | v1 | Not started | — |
-| Extract, split, merge; insert blank pages; export pages | v1 | Not started | — |
-| Undo and redo; preview changes | v1 | Not started | — |
-| Save to a new file by default for destructive operations | v1 | Not started | — |
+| Insert pages from another PDF | v1 | Prototyped (engine and worker; no user interface) | Through qpdf (`QpdfPages.Rebuild`): pages are copied in with everything they use. Not yet in the app |
+| Delete, rotate, reorder, duplicate pages | v1 | Prototyped (rotate and delete in the app; reorder and duplicate in the engine) | Rotate Left, Rotate Right and Delete Page act on the page in view. Encryption is kept; a document whose permissions forbid assembly is refused unless opened with its owner password. A duplicated page gets its own annotations, without form widgets |
+| Extract, split, merge; insert blank pages; export pages | v1 | Prototyped (engine: extract, merge and blank pages; no user interface) | Split and export are not started |
+| Undo and redo; preview changes | v1 | Prototyped | Undo and Redo (Ctrl+Z, Ctrl+Y) keep 20 earlier versions. Each change is shown as soon as it is made; the file is not touched until it is saved |
+| Save to a new file by default for destructive operations | v1 | Prototyped | Save a Copy (Ctrl+Shift+S) suggests "<name> (edited).pdf". It writes a temporary file, flushes it to disk, compares it with the document, then replaces the target in one step. Closing, opening another document or quitting with unsaved changes asks "Save your changes?" |
 
 ## 4.4 Create and convert
 

@@ -14,7 +14,7 @@ using PdfSuite.Pdf.Remote;
 namespace PdfSuite.App;
 
 // Spike shell for S1: open a PDF and scroll or zoom it. Messages follow docs/04-UI-COPY-AND-PRODUCT-RULES.md.
-internal sealed class MainWindow : Window
+internal sealed partial class MainWindow : Window
 {
     private readonly AppOptions _options;
     private readonly DocumentView _view;
@@ -47,7 +47,7 @@ internal sealed class MainWindow : Window
         open.Click += async (_, _) => await PickAndOpenAsync();
         var close = new Button { Content = "Close Document", Margin = new Thickness(8, 0, 0, 0) };
         ToolTip.SetTip(close, $"Close this document ({Shortcuts.Label("W")})");
-        close.Click += (_, _) => CloseDocument();
+        close.Click += async (_, _) => await CloseDocumentAsync();
         var print = new Button { Content = "Print…", Margin = new Thickness(8, 0, 0, 0) };
         ToolTip.SetTip(print, "Print this document");
         print.Click += async (_, _) => await PrintAsync();
@@ -83,6 +83,7 @@ internal sealed class MainWindow : Window
         bar.Children.Add(_status);
 
         _navigation = new NavigationBar(_view);
+        Control editBar = BuildEditBar();
         _outline = new OutlinePanel { IsVisible = false };
         _outline.EntryChosen += (page, top) => _view.ShowPagePoint(page, top);
         sidebar.Click += (_, _) => _outline.IsVisible = !_outline.IsVisible;
@@ -101,9 +102,11 @@ internal sealed class MainWindow : Window
         var root = new DockPanel();
         DockPanel.SetDock(bar, Dock.Top);
         DockPanel.SetDock(_navigation, Dock.Top);
+        DockPanel.SetDock(editBar, Dock.Top);
         DockPanel.SetDock(_searchPanel, Dock.Top);
         root.Children.Add(bar);
         root.Children.Add(_navigation);
+        root.Children.Add(editBar);
         root.Children.Add(_searchPanel);
         DockPanel.SetDock(_outline, Dock.Left);
         root.Children.Add(_outline);
@@ -111,6 +114,7 @@ internal sealed class MainWindow : Window
         Content = root;
 
         Opened += async (_, _) => await OnOpenedAsync();
+        Closing += OnWindowClosing;
         Closed += (_, _) =>
         {
             ClearSearch();
@@ -128,6 +132,11 @@ internal sealed class MainWindow : Window
 
     public async Task<bool> OpenFileAsync(string path)
     {
+        if (!await ConfirmDiscardAsync())
+        {
+            return false;
+        }
+
         byte[] data;
         try
         {
@@ -139,7 +148,7 @@ internal sealed class MainWindow : Window
             return false;
         }
 
-        bool opened = await OpenAsync(data, Path.GetFileName(path));
+        bool opened = await OpenAsync(data, Path.GetFileName(path), path);
 
         // Smoke tests and benchmarks leave the list alone.
         if (opened && !_options.SmokeTest && !_options.Benchmark)
@@ -175,6 +184,11 @@ internal sealed class MainWindow : Window
 
     private async Task PickAndOpenAsync()
     {
+        if (!await ConfirmDiscardAsync())
+        {
+            return;
+        }
+
         IReadOnlyList<IStorageFile> files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "Open PDF",
@@ -200,7 +214,8 @@ internal sealed class MainWindow : Window
             await using Stream stream = await files[0].OpenReadAsync();
             using var buffer = new MemoryStream();
             await stream.CopyToAsync(buffer);
-            if (await OpenAsync(buffer.ToArray(), files[0].Name) && files[0].TryGetLocalPath() is string local)
+            string? local = files[0].TryGetLocalPath();
+            if (await OpenAsync(buffer.ToArray(), files[0].Name, local) && local is not null)
             {
                 _recent.Add(local);
                 FillRecentMenu();
@@ -212,7 +227,7 @@ internal sealed class MainWindow : Window
         }
     }
 
-    private async Task<bool> OpenAsync(byte[] data, string name)
+    private async Task<bool> OpenAsync(byte[] data, string name, string? path)
     {
         ShowMessage($"Opening {name}…");
         try
@@ -242,6 +257,7 @@ internal sealed class MainWindow : Window
             previous?.Dispose();
             _documentName = name;
             _documentSize = data.LongLength;
+            StartEditing(data, path);
             AutomationProperties.SetName(_view, name);
             ShowMessage(null);
             _view.Focus();
@@ -281,7 +297,7 @@ internal sealed class MainWindow : Window
                 break;
             case Avalonia.Input.Key.W when modifiers == Shortcuts.Command:
                 e.Handled = true;
-                CloseDocument();
+                _ = CloseDocumentAsync();
                 break;
             case Avalonia.Input.Key.G when modifiers == Shortcuts.Command:
                 e.Handled = true;
@@ -290,6 +306,19 @@ internal sealed class MainWindow : Window
             case Avalonia.Input.Key.D when modifiers == Shortcuts.Command:
                 e.Handled = true;
                 _ = ShowPropertiesAsync();
+                break;
+            case Avalonia.Input.Key.Z when modifiers == Shortcuts.Command:
+                e.Handled = true;
+                _ = UndoAsync();
+                break;
+            case Avalonia.Input.Key.Y when modifiers == Shortcuts.Command:
+            case Avalonia.Input.Key.Z when modifiers == (Shortcuts.Command | Avalonia.Input.KeyModifiers.Shift):
+                e.Handled = true;
+                _ = RedoAsync();
+                break;
+            case Avalonia.Input.Key.S when modifiers == (Shortcuts.Command | Avalonia.Input.KeyModifiers.Shift):
+                e.Handled = true;
+                _ = SaveCopyAsync();
                 break;
             case Avalonia.Input.Key.F3 when modifiers is Avalonia.Input.KeyModifiers.None or Avalonia.Input.KeyModifiers.Shift:
                 e.Handled = true;
@@ -368,9 +397,9 @@ internal sealed class MainWindow : Window
     /// Closes the document: its search, selection and worker go with it. Nothing is saved or changed,
     /// as the viewer never writes to the file it opened.
     /// </summary>
-    private void CloseDocument()
+    private async Task CloseDocumentAsync()
     {
-        if (_view.Session is not DocumentSession session)
+        if (_view.Session is not DocumentSession session || !await ConfirmDiscardAsync())
         {
             return;
         }
@@ -382,6 +411,7 @@ internal sealed class MainWindow : Window
         session.Dispose();
         _documentName = string.Empty;
         _documentSize = 0;
+        StopEditing();
         AutomationProperties.SetName(_view, null);
         ShowMessage(null);
     }
@@ -732,7 +762,7 @@ internal sealed class MainWindow : Window
             (_, null) => "No document open.",
             (_, SessionState.Restarting) => "The rendering process stopped. Restarting…",
             (_, SessionState.Failed) => "The rendering process stopped repeatedly. Close and reopen the document.",
-            _ => $"{_documentName}   Page {_view.CurrentPage + 1} of {session!.PageSizes.Count}   {_view.Zoom:P0}",
+            _ => $"{_documentName}{(HasUnsavedChanges ? " (edited, not saved)" : string.Empty)}   Page {_view.CurrentPage + 1} of {session!.PageSizes.Count}   {_view.Zoom:P0}",
         };
     }
 }

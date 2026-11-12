@@ -188,7 +188,12 @@ public sealed class WorkerClient : IDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
         int id = NextRequestId();
-        Pending pending = Register(id);
+
+        // Opening parses the whole file and scans its layers with qpdf, and the clock starts before a new
+        // worker is ready. On a busy machine a large document took longer than the 15-second hang limit,
+        // so a healthy worker was stopped and a valid file reported as unreadable. Like other whole-file
+        // operations, opening gets a limit that grows with the file.
+        Pending pending = Register(id, StructureTimeout(data));
 
         // Cancelling unregisters the request, so the watchdog does not mistake it for a hang.
         // If the worker had already started opening, the late answer closes the document (Discard).
