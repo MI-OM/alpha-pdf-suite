@@ -461,7 +461,7 @@ Do not expose a privacy toggle for telemetry or network behaviour that is not ac
 
 **Description:** A free, open-source, cross-platform application for working with PDF documents.
 
-**Licence:** Apache License 2.0 for original project code, subject to final project approval.
+**Licence:** Apache License 2.0 for original project code (adopted 2026-11-11, ADR-0004).
 
 **Links:**
 - Source Code

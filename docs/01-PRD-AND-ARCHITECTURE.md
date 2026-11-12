@@ -4,7 +4,7 @@
 **Document status:** Draft v0.2 (rescoped 2026-10-21; see `docs/research/2026-10-21-viability-assessment.md`)  
 **Product type:** Free, open-source, cross-platform desktop PDF application  
 **Target platforms:** Windows, macOS, Linux  
-**Proposed application licence:** Apache License 2.0, subject to final review  
+**Application licence:** Apache License 2.0, adopted 2026-11-11 (ADR-0004)  
 **Architecture status:** Proposed; decisions must be validated by technical spikes (see `docs/06-SPIKE-PLAN.md`)  
 **Primary principle:** Build a trustworthy, complete PDF productivity application without sacrificing user freedom, security, or document fidelity.
 **Product working name:** Alpha PDF Suite (temporary; an unrelated commercial PDF product named "AlphaPDF" already exists, so the product must be renamed before any public release)

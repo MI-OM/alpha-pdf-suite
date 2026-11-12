@@ -1,0 +1,9 @@
+Alpha PDF Suite (working name)
+Copyright 2026 The Alpha PDF Suite authors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product bundles third-party software under their own licences, including
+PDFium (BSD-3-Clause), qpdf (Apache-2.0) and its bundled GnuTLS stack (LGPL),
+Avalonia and SkiaSharp (MIT), and the .NET runtime (MIT). Each one's licence,
+version and obligations are listed in docs/licensing/dependency-inventory.md.

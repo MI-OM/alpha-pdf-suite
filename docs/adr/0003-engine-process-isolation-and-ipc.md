@@ -1,6 +1,6 @@
 # ADR-0003: Engine process isolation and IPC
 
-**Status:** Proposed (2026-11-01)
+**Status:** Accepted (2026-11-11), by the agent at the maintainer's instruction to take decisions; the maintainer can reverse it (decisions for review, Q4).
 **Decides:** where untrusted documents are parsed, how the app talks to that process, and what limits apply to it.
 
 ## 1. Context and constraints

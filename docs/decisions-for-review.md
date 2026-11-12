@@ -51,19 +51,30 @@ Eight local commits, none pushed (`git log origin/main..HEAD`). Each is one feat
 | D8 | **Recent documents are remembered:** the last 10 file paths, in a JSON file in the user's application data folder. No contents or previews; never sent anywhere; Clear recent history deletes the file. Smoke tests and benchmarks add nothing. There is no setting to turn it off yet; the copy rules list one (§14). | Expected by readers, and the copy rules ask for it (§2, §3) | GDPR: purpose limitation, data minimisation and the user's control (Art. 5(1)(b), (c)); privacy by design (Art. 25). Stored on the device only |
 | D6 | **Search and other messages the copy rules lacked** are written in the rules' style and listed in §5 of the UI copy rules as proposals. | The copy rules are the source of truth; new wording goes there for review, not only into code | UI copy rules §16 |
 
+## Decided 2026-11-11, at the maintainer's instruction to take decisions
+
+The maintainer asked the agent to "take decisions and document it clear". These close most of what was open. Each can be reversed.
+- **Not yet published:** the licence becomes public only when these commits are pushed. Pushing it is the act that releases this code under Apache-2.0.
+
+| # | Decision | Why | Rules checked |
+|---|---|---|---|
+| Q1 | **"Adobe quality" means a quality bar, not parity or likeness:** the PRD's definition of done, its measurable goals and the roadmap's gates (`docs/quality-bar.md`). | The PRD rules out claiming Acrobat parity, and the copy rules forbid imitating Adobe's identity | Trademark and passing-off law: no Adobe name, look or marks are used |
+| Q2 | **Apache-2.0 for the project's own code** (`LICENSE`, verbatim from GitHub's licence API; `NOTICE`). Contributions are signed off under the Developer Certificate of Origin 1.1; no contributor licence agreement. The copyright line reads "The Alpha PDF Suite authors"; the maintainer may put their legal name instead. | Compatible with every bundled dependency: PDFium BSD-3-Clause, qpdf Apache-2.0, GnuTLS LGPL as a separate library, Avalonia, SkiaSharp and .NET MIT, the AppImage runtime MIT and LGPL. It gives contributors and users an explicit patent grant. The DCO is lighter for contributors than an agreement | Apache-2.0 §4 (notices) and §5 (contributions); LGPL-2.1 §6 for the separately linked GnuTLS and libfuse (relinking stays possible); the dependency inventory |
+| Q3 | **Contributor Covenant 2.1** as the code of conduct (`CODE_OF_CONDUCT.md`), adopted by reference. | The most widely used open-source code. Adopting it by reference avoids an inexact copy | **Still needs the maintainer:** a contact for reports, published before outside contributions open |
+| Q4 | **ADR-0002, 0003, 0004, 0005 and 0006 are accepted.** ADR-0001 stays Proposed. | The spike's evidence supports each as proposed. ADR-0001's own condition is a real screen-reader test, which is evidence, not judgement | Each ADR's licensing and security sections |
+| Q5 | **The signing route** (ADR-0005 decision 4): the Microsoft Store first, then SignPath Foundation for direct Windows downloads; a Developer ID with notarisation for macOS; SHA-256 checksums for Linux. | Free routes first. Notarisation is the only way past Gatekeeper | **Carrying it out needs the maintainer:** joining the Apple Developer Program (USD 99 a year, a purchase the agent may not make) and applying to the Store and to SignPath under their own identity |
+| Q6 | **Publish restores are locked** with a lock file per runtime, as ADR-0005 decision 5 proposed; CI restores publishes in locked mode. | Supply-chain integrity: a publish uses exactly the packages reviewed | ADR-0005 §6; the dependency inventory |
+
 ## Still open (needs the maintainer)
 
 | Item | Why it cannot be decided here | Recommendation |
 |---|---|---|
-| Project licence (ADR-0004) | Choosing the licence for the project's own code is the copyright holder's legal act | Apache-2.0, as proposed. It is compatible with every bundled dependency (PDFium BSD-3-Clause, qpdf Apache-2.0, Avalonia MIT, SkiaSharp MIT, GnuTLS LGPL as a separate library, the AppImage runtime's MIT and LGPL parts) and gives contributors an explicit patent grant |
-| Product name | Needs trademark searches in the markets of release, and an owner for the mark | Shortlist three names, then search USPTO, EUIPO and WIPO's Global Brand Database, plus domains and package IDs |
-| Apple Developer Program | Costs USD 99 a year and needs a legal identity | Join before any macOS release: without notarisation, Gatekeeper blocks downloaded copies |
-| Windows signing route | Needs an account, an identity check and possibly fees | The Microsoft Store first (it re-signs packages for free), then SignPath Foundation (free for open source) for direct downloads |
-| Code of conduct | Needs a named contact who receives reports | Contributor Covenant 2.1, with a dedicated contact address |
-| Accepting ADR-0001 to ADR-0006 | Accepting architecture is the maintainer's call | Accept ADR-0002, 0003, 0005 and 0006 as proposed. ADR-0001 waits on the NVDA and Narrator check; ADR-0004 waits on the licence |
-| Locked publish restores (ADR-0005 decision 5) | The per-OS lock files can only be checked by CI, which runs after a push | Adopt per-runtime lock files, as ADR-0005 proposes, in a change verified by CI |
+| Product name | Needs trademark searches in the markets of release, and an owner for the mark. The working name must change before release, as "AlphaPDF" is already a product (copy rules §1) | Shortlist three names, then search USPTO, EUIPO and WIPO's Global Brand Database, plus domains and package IDs |
+| Conduct contact (Q3) | It is a person or address that receives reports | A dedicated address on the project's domain, once there is one |
+| Apple Developer Program and Store and SignPath applications (Q5) | A purchase and applications under the maintainer's identity | As in Q5 |
+| ADR-0001 | Waits on the NVDA and Narrator check (S2) | Run the S2 checklist in the spike results |
 | AI-USAGE wording | It speaks for the maintainer | — |
-| NVDA and Narrator check (S2) | Needs a person with a screen reader | Run the S2 checklist in the spike results |
+| Human review of agent-written changes | PRD §12 needs a reviewer other than the implementing agent before anything is "done" | Review the commits since 2026-11-07, starting with this log |
 
 ## Compliance notes for features built on 2026-11-07
 

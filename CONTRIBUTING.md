@@ -1,6 +1,6 @@
 # Contributing
 
-> **DRAFT for the maintainer to review before publishing.** The project is still in its technical spike, and its licence is not yet adopted (`docs/adr/0004-licensing-policy.md`). Until both are settled, outside contributions cannot be accepted.
+> **Outside contributions open once the maintainer publishes the conduct contact** (`CODE_OF_CONDUCT.md`). The licence (Apache-2.0) and the sign-off rule are settled (2026-11-11).
 
 Thank you for your interest in PDF Suite (a working name). It aims to be a PDF application people can trust: redaction that is verified, signature status that is honest, offline by default, and an accessible reader. Contributions are judged against that aim first, and feature count second (`docs/01-PRD-AND-ARCHITECTURE.md`, §1).
 
@@ -73,8 +73,10 @@ A maintainer reviews every change before it is merged. Security-sensitive code n
 
 ## Licence of contributions
 
-**Not yet decided.** The proposed project licence is Apache-2.0 (ADR-0004). Whether contributors sign off their commits (the Developer Certificate of Origin) or sign a contributor agreement is also open. Both must be settled before outside contributions are accepted.
+The project's code is licensed under Apache-2.0 (`LICENSE`; ADR-0004). Contributions are accepted under the same licence, as its section 5 provides.
+- **Sign-off:** each commit is signed off under the [Developer Certificate of Origin 1.1](https://developercertificate.org/): add `Signed-off-by: Your Name <you@example.com>` (`git commit -s`). It certifies that you have the right to submit the work under the project's licence.
+- **No contributor licence agreement:** the sign-off is enough (decisions for review, Q2).
 
 ## Conduct
 
-A code of conduct is still to be adopted (engineering checklists §6). Until then: be respectful, assume good intent, and keep discussion about the work.
+The project follows the Contributor Covenant 2.1 (`CODE_OF_CONDUCT.md`).

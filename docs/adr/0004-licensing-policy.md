@@ -1,6 +1,6 @@
 # ADR-0004: Licensing policy and excluded dependencies
 
-**Status:** Proposed (2026-11-01). Accepting it also adopts Apache-2.0 for the project's own code, which the README still lists as not adopted. That is the maintainer's decision.
+**Status:** Accepted (2026-11-11), by the agent at the maintainer's instruction to take decisions; the maintainer can reverse it (decisions for review, Q4). Apache-2.0 is adopted for the project's own code (`LICENSE`).
 **Decides:** the licence of project code, which dependency licences are allowed and on what terms, and the rules that keep that true over time.
 
 ## 1. Context and constraints

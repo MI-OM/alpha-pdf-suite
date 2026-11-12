@@ -89,13 +89,13 @@ pwsh tools/package/package-linux.ps1 -Layout artifacts/package/linux-x64-aot/app
 
 ## Contributing and security
 
-Outside contributions cannot be accepted until the project licence is adopted. `CONTRIBUTING.md` (a draft) describes how contributions will work.
+`CONTRIBUTING.md` describes how contributions work: Apache-2.0, signed off under the Developer Certificate of Origin. Outside contributions open once the maintainer publishes the conduct contact (`CODE_OF_CONDUCT.md`).
 
 Report security problems privately, as `SECURITY.md` describes, never in a public issue.
 
 ## Licence
 
-The licence for original project code is not yet adopted. Apache-2.0 is proposed (PRD §10). Third-party licences are recorded in `docs/licensing/dependency-inventory.md`.
+The project's own code is licensed under the [Apache License 2.0](LICENSE) (adopted 2026-11-11; ADR-0004). Third-party components keep their own licences; they are listed in `NOTICE` and recorded in `docs/licensing/dependency-inventory.md`. Test documents and other assets carry their own terms too (engineering checklists §1).
 
 ## AI-assisted development
 

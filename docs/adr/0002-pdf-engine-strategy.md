@@ -1,6 +1,6 @@
 # ADR-0002: PDF engine strategy: PDFium, qpdf, and an in-house writer later
 
-**Status:** Proposed (2026-11-01)
+**Status:** Accepted (2026-11-11), by the agent at the maintainer's instruction to take decisions; the maintainer can reverse it (decisions for review, Q4).
 **Decides:** which libraries read, render, edit and write PDFs, how they are bound, and which gaps are left for project code.
 
 ## 1. Context and constraints
@@ -9,7 +9,7 @@
   - annotations, page operations and form filling
   - AES-256 encryption and metadata writes
   - a full-rewrite cleanup for redaction
-- **Licence:** the project licence is Apache-2.0 (proposed, ADR-0004), so AGPL and GPL engines are excluded.
+- **Licence:** the project licence is Apache-2.0 (adopted 2026-11-11, ADR-0004), so AGPL and GPL engines are excluded.
 - **No permissive .NET writer:** since PDFsharp moved to AGPL in 6.5.0 (2026-10-14), no maintained, permissively licensed .NET library writes and manipulates PDFs.
 - **PDFium's own limits:** it cannot write encryption, its public API is not thread-safe, and the prebuilt binaries lack PartitionAlloc hardening (viability assessment §3.3).
 

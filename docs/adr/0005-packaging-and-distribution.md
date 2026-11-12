@@ -1,6 +1,6 @@
 # ADR-0005: Packaging and distribution channels
 
-**Status:** Proposed (2026-11-01). Signing and notarisation depend on decisions listed in spike plan §9: the Apple Developer Program, and the Windows signing route.
+**Status:** Accepted (2026-11-11), by the agent at the maintainer's instruction to take decisions; the maintainer can reverse it (decisions for review, Q4). The signing route is decided (decision 4); carrying it out needs the maintainer to join the Apple Developer Program and apply to the Microsoft Store and SignPath Foundation.
 **Decides:** how the app is compiled for release, which package formats ship on each OS, how they are signed, and how the build stays reproducible.
 
 ## 1. Context and constraints

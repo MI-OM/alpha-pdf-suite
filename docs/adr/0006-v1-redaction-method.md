@@ -1,6 +1,6 @@
 # ADR-0006: v1 redaction method and verification
 
-**Status:** Proposed (2026-11-01)
+**Status:** Accepted (2026-11-11), by the agent at the maintainer's instruction to take decisions; the maintainer can reverse it (decisions for review, Q4).
 **Decides:** how v1 removes content the user redacts, how the result is checked before it is saved, and what v1 does not attempt.
 
 ## 1. Context and constraints
