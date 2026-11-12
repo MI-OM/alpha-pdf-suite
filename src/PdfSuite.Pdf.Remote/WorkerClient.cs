@@ -335,6 +335,55 @@ public sealed class WorkerClient : IDisposable
         return new DocumentInfo(metadata, version, Encrypted: (flags & 1) != 0, permissions, Tagged: (flags & 2) != 0);
     }
 
+    /// <summary>
+    /// Builds a new document from pages of the sources, in the worker with qpdf: see
+    /// <c>QpdfPages.Rebuild</c>. The first source's document-level content and encryption are kept.
+    /// </summary>
+    /// <exception cref="PageAssemblyNotAllowedException">A source's permissions forbid changing its pages.</exception>
+    public async Task<byte[]> RebuildPagesAsync(IReadOnlyList<PageSource> sources, IReadOnlyList<PageSpec> pages, CancellationToken cancellationToken = default)
+    {
+        byte[] header = new byte[4 + sources.Sum(s => PayloadWriter.SizeOf(s.Password) + 4) + 4 + (pages.Count * 28)];
+        var writer = new PayloadWriter(header);
+        writer.WriteInt32(sources.Count);
+        foreach (PageSource source in sources)
+        {
+            writer.WriteString(source.Password);
+            writer.WriteInt32(source.Pdf.Length);
+        }
+
+        writer.WriteInt32(pages.Count);
+        foreach (PageSpec page in pages)
+        {
+            writer.WriteInt32(page.Source);
+            writer.WriteInt32(page.PageIndex);
+            writer.WriteInt32(page.QuarterTurns);
+            writer.WriteDouble(page.BlankSize?.Width ?? double.NaN);
+            writer.WriteDouble(page.BlankSize?.Height ?? double.NaN);
+        }
+
+        byte[] data = new byte[sources.Sum(s => (long)s.Pdf.Length)];
+        int offset = 0;
+        foreach (PageSource source in sources)
+        {
+            source.Pdf.CopyTo(data, offset);
+            offset += source.Pdf.Length;
+        }
+
+        using Message response = await RequestAsync(MessageKind.RebuildPages, header, data, StructureTimeout(data), cancellationToken).ConfigureAwait(false);
+        if (response.Kind == MessageKind.Error)
+        {
+            var reader = new PayloadReader(response.Payload);
+            if ((WorkerErrorCode)reader.ReadInt32() == WorkerErrorCode.NotAllowed)
+            {
+                throw new PageAssemblyNotAllowedException(reader.ReadInt32());
+            }
+        }
+
+        ThrowIfError(response);
+        Expect(response, MessageKind.Transformed);
+        return response.Payload.ToArray();
+    }
+
     /// <summary>The document's outline; see <see cref="IPdfDocument.GetOutline"/>.</summary>
     public async Task<IReadOnlyList<OutlineItem>> GetOutlineAsync(int documentId, CancellationToken cancellationToken = default)
     {

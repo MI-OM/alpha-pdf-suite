@@ -26,6 +26,7 @@ public enum MessageKind : byte
     GetDocumentInfo = 12,
     GetCharacters = 13,
     GetOutline = 14,
+    RebuildPages = 15,
     AllocateForTest = 90,
     CountDocumentsForTest = 91,
 
@@ -59,6 +60,9 @@ public enum WorkerErrorCode
 
     /// <summary>qpdf could not process the document. The detail is qpdf's error code.</summary>
     StructureFailed = 8,
+
+    /// <summary>A source document's permissions forbid the operation. The detail is the source's index.</summary>
+    NotAllowed = 9,
 }
 
 /// <summary>The whole-file operations a <see cref="MessageKind.Transform"/> request performs with qpdf.</summary>

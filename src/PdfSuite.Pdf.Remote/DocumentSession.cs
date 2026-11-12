@@ -116,6 +116,23 @@ public sealed class DocumentSession : IDisposable
         }
     }
 
+    /// <summary>The document's bytes as opened, for saving a copy or for page operations.</summary>
+    public ReadOnlyMemory<byte> Data => _data;
+
+    /// <summary>
+    /// A new document from this one's pages (source 0) and any others', built in the worker; this
+    /// session's document is not changed. Its password is used, and its encryption kept.
+    /// </summary>
+    public async Task<byte[]> RebuildPagesAsync(IReadOnlyList<PageSpec> pages, IReadOnlyList<PageSource>? others = null, CancellationToken cancellationToken = default)
+    {
+        var (client, _, _) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);
+        List<PageSource> sources = [new PageSource(_data, _password), .. others ?? []];
+        return await client.RebuildPagesAsync(sources, pages, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>The password the document was opened with, to reopen an edited copy; null if none.</summary>
+    public string? Password => _password;
+
     public async Task<IReadOnlyList<OutlineItem>> GetOutlineAsync(CancellationToken cancellationToken = default)
     {
         var (client, documentId, _) = await ReadyClientAsync(cancellationToken).ConfigureAwait(false);

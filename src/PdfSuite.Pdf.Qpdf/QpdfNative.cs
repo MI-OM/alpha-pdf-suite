@@ -105,6 +105,26 @@ internal static unsafe partial class QpdfNative
     [LibraryImport(Library)]
     internal static partial uint qpdf_get_page_n(nint qpdf, nuint zeroBasedIndex);
 
+    // Page manipulation (qpdf-c.h, "Page-level manipulation"). Inherited attributes such as
+    // /Rotate and /MediaBox must be pushed down to the pages before pages are moved.
+    [LibraryImport(Library)]
+    internal static partial int qpdf_push_inherited_attributes_to_page(nint qpdf);
+
+    [LibraryImport(Library)]
+    internal static partial int qpdf_update_all_pages_cache(nint qpdf);
+
+    // Adds a page at the end (first = 0) or the start. newpageQpdf may be qpdf itself, or another
+    // qpdf_data, whose page is then copied in as a foreign object.
+    [LibraryImport(Library)]
+    internal static partial int qpdf_add_page(nint qpdf, nint newpageQpdf, uint newpage, int first);
+
+    [LibraryImport(Library)]
+    internal static partial int qpdf_remove_page(nint qpdf, uint page);
+
+    // Whether the document's permissions allow assembling it (inserting, rotating, deleting pages).
+    [LibraryImport(Library)]
+    internal static partial int qpdf_allow_modify_assembly(nint qpdf);
+
     [LibraryImport(Library, StringMarshalling = StringMarshalling.Utf8)]
     internal static partial int qpdf_oh_has_key(nint qpdf, uint dictionary, string key);
 

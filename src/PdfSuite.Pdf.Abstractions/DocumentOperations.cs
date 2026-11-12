@@ -11,6 +11,33 @@ public sealed record PdfPermissions(
     bool AnnotateAndFillForms = true,
     bool Assemble = false);
 
+/// <summary>
+/// One page of a rebuilt document: page <paramref name="PageIndex"/> of source document
+/// <paramref name="Source"/>, turned <paramref name="QuarterTurns"/> quarter turns clockwise, or, with
+/// a <paramref name="BlankSize"/>, a blank page of that size. Rotating, deleting, reordering,
+/// duplicating, extracting, inserting and merging are all lists of these.
+/// </summary>
+public readonly record struct PageSpec(int Source, int PageIndex, int QuarterTurns = 0, PageSize? BlankSize = null)
+{
+    public static PageSpec Blank(PageSize size) => new(-1, -1, 0, size);
+
+    public bool IsBlank => BlankSize is not null;
+}
+
+/// <summary>
+/// A source document for <see cref="PageSpec"/>s, with its password if it needs one.
+/// <paramref name="OwnerAccess"/> says the caller has checked that the password is the owner's, so
+/// the document's restrictions do not apply. qpdf's C API cannot tell; the worker checks with PDFium.
+/// </summary>
+public sealed record PageSource(byte[] Pdf, string? Password = null, bool OwnerAccess = false);
+
+/// <summary>A source document's permissions do not allow changing its pages (ISO 32000-1 Table 22, bit 11), and its owner password was not given.</summary>
+public sealed class PageAssemblyNotAllowedException(int source)
+    : Exception($"Document {source + 1}'s permissions do not allow changing its pages.")
+{
+    public int SourceIndex { get; } = source;
+}
+
 /// <summary>An area to remove: a rectangle in points from the top-left corner of the page as displayed.</summary>
 public readonly record struct RedactionArea(int PageIndex, PageRect Rect);
 

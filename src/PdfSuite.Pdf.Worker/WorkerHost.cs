@@ -114,6 +114,9 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
                 case MessageKind.GetOutline:
                     GetOutline(request);
                     break;
+                case MessageKind.RebuildPages:
+                    RebuildPages(request);
+                    break;
                 case MessageKind.Print:
                     Print(request);
                     break;
@@ -141,6 +144,10 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
                     SendError(request.RequestId, WorkerErrorCode.InvalidRequest, 0, $"Unsupported request {request.Kind}.");
                     break;
             }
+        }
+        catch (PageAssemblyNotAllowedException ex)
+        {
+            SendError(request.RequestId, WorkerErrorCode.NotAllowed, ex.SourceIndex, ex.Message);
         }
         catch (PdfOpenException ex)
         {
@@ -301,6 +308,44 @@ internal sealed class WorkerHost(Stream input, Stream output, bool allowTestComm
         }
 
         MessageIO.Write(output, MessageKind.TextMatches, request.RequestId, payload);
+    }
+
+    // Payload: [int32 sources] then per source [password][int32 length]; [int32 pages] then per page
+    // [int32 source][int32 page][int32 quarter turns][double blank width, NaN if not blank][double blank height];
+    // then the sources' bytes, one after another. Response: Transformed, with the new document.
+    // Each source's permissions are what PDFium says this password gives (all of them with the owner
+    // password); qpdf alone cannot tell the owner password from the user's.
+    private void RebuildPages(in Message request)
+    {
+        var reader = new PayloadReader(request.Payload);
+        var headers = new (string? Password, int Length)[reader.ReadInt32()];
+        for (int i = 0; i < headers.Length; i++)
+        {
+            headers[i] = (reader.ReadString(), reader.ReadInt32());
+        }
+
+        var pages = new PageSpec[reader.ReadInt32()];
+        for (int i = 0; i < pages.Length; i++)
+        {
+            int source = reader.ReadInt32(), page = reader.ReadInt32(), turns = reader.ReadInt32();
+            double width = reader.ReadDouble(), height = reader.ReadDouble();
+            pages[i] = double.IsNaN(width) ? new PageSpec(source, page, turns) : PageSpec.Blank(new PageSize(width, height));
+        }
+
+        var sources = new PageSource[headers.Length];
+        for (int i = 0; i < headers.Length; i++)
+        {
+            byte[] pdf = reader.ReadBytes(headers[i].Length).ToArray();
+            bool allowed;
+            using (IPdfDocument document = _engine.Open(pdf, headers[i].Password))
+            {
+                allowed = document.GetDocumentInfo().Permissions.Assemble;
+            }
+
+            sources[i] = new PageSource(pdf, headers[i].Password, OwnerAccess: allowed);
+        }
+
+        MessageIO.Write(output, MessageKind.Transformed, request.RequestId, QpdfPages.Rebuild(sources, pages));
     }
 
     // Payload: [docId]. Response: [int32 n] then n entries in document order, each

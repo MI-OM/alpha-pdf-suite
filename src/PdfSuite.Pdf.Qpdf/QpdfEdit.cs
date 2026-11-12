@@ -55,6 +55,8 @@ public sealed unsafe class QpdfEdit : IDisposable
 
     public bool Has(QpdfObject dictionary, string key) => Checked(QpdfNative.qpdf_oh_has_key(Handle, dictionary.Handle, key)) != 0;
 
+    public int IntValue(QpdfObject value) => Checked(QpdfNative.qpdf_oh_get_int_value_as_int(Handle, value.Handle));
+
     public bool IsDictionary(QpdfObject value) => QpdfNative.qpdf_oh_is_dictionary(Handle, value.Handle) != 0;
 
     public bool IsArray(QpdfObject value) => QpdfNative.qpdf_oh_is_array(Handle, value.Handle) != 0;
@@ -202,6 +204,17 @@ public sealed unsafe class QpdfEdit : IDisposable
     public QpdfObject StreamDictionary(QpdfObject stream) => Checked(QpdfNative.qpdf_oh_get_dict(Handle, stream.Handle));
 
     public QpdfObject MakeIndirect(QpdfObject value) => Checked(QpdfNative.qpdf_make_indirect_object(Handle, value.Handle));
+
+    /// <summary>Whether the document's permissions allow assembling it: inserting, rotating and deleting pages.</summary>
+    public bool AllowsPageAssembly => Checked(QpdfNative.qpdf_allow_modify_assembly(Handle)) != 0;
+
+    /// <summary>Copies attributes pages inherit from the page tree (/Rotate, /MediaBox, /Resources) onto each page, so pages can be moved.</summary>
+    public void PushInheritedPageAttributes() => Checked(QpdfNative.qpdf_push_inherited_attributes_to_page(Handle));
+
+    public void RemovePage(QpdfObject page) => Checked(QpdfNative.qpdf_remove_page(Handle, page.Handle));
+
+    /// <summary>Appends a page: one of this document's, or one of <paramref name="from"/>'s, copied in.</summary>
+    public void AddPage(QpdfEdit from, QpdfObject page) => Checked(QpdfNative.qpdf_add_page(Handle, from.Handle, page.Handle, 0));
 
     /// <summary>Writes the edited document as a complete new file (deterministic ID unless encrypted).</summary>
     public byte[] Save(bool inspectable = false) => _file.Write(_ => { }, encryptedOutput: _file.IsEncrypted, inspectable);
